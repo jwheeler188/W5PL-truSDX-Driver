@@ -1,0 +1,22 @@
+# Python environments and caches (built by install.sh)
+.venv/
+macOS/.venv/
+linux/.venv/
+macOS/.arch
+__pycache__/
+*.pyc
+
+# Windows build output (published as release assets, not committed)
+*.dist/
+*.build/
+windows/installer-build/Setup_*.exe
+
+# ARM64 drivers you download yourself (see windows/installer-build/arm64-drivers/README.txt)
+windows/installer-build/arm64-drivers/*
+!windows/installer-build/arm64-drivers/README.txt
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db
+dist/
