@@ -41,6 +41,13 @@ Direct test (no driver, no WSJT-X), tone at 0 W, un-key = 200 ms quiet + `;RX;` 
 bursts. This matches your CAT page, which says lower rates are OK if the samples are evenly spaced. Through the
 driver: 3/3 FT8-length TX un-keyed, with RX audio back 0.216 / 0.220 / 0.221 s after `RX;`.
 
+> **Correction (2026-11-08, after on-air tests):** 8000 S/s in 20 ms pieces un-keys reliably but **sounds garbled on
+> air**: each piece still crosses the link at full speed, so the radio plays it too fast and then pauses. Better fix,
+> tested on air: open the port with **2 stop bits** (`serial.Serial(..., stopbits=serial.STOPBITS_TWO)`) and send at
+> **10473 S/s** (= 115200 / 11). The link itself then spaces every sample evenly, and the radio gets ~9% spare time
+> per byte. Clean audio on a second receiver, 190+ PSK Reporter spots in 5 minutes, QSOs completed, un-key in 0.1 s.
+> At 11520 S/s with 1 stop bit, the same radio got stuck or rebooted after transmissions.
+
 ## Bug 2 (critical): `RX;` sent straight behind the TX audio is ignored
 `handle_cat()` in TX does `tx_cat_delay()` (flush + 10 ms), then `;`, then `RX;`. The radio often ignores it,
 replying `?;`, and keeps transmitting. **Fix:** stop the audio, flush, **200 ms quiet**, `;RX;`, 100 ms, `;UA2;`

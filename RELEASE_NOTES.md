@@ -1,29 +1,29 @@
-# W5PL Driver for DL2MAN (tr)uSDX — beta 2026-11-08-2
+# W5PL Driver for DL2MAN (tr)uSDX — beta 2026-11-08-3
 
 Audio and CAT over the (tr)uSDX's single USB cable for WSJT-X and other digital-mode programs. Based on trusdx-audio
 by SQ3SWF and PE1NNZ.
 
-> **Safety fix, replaces beta 2026-11-08.** In beta 2026-11-08 the new crash recovery could hold back WSJT-X's
-> un-key (`RX;`) when the radio looked unresponsive, which is also how a radio stuck in transmit looks: the radio could
-> stay keyed. Now `RX;` always reaches the radio, the driver refuses to key a radio that isn't streaming, and unknown
-> queries during TX no longer break the TX audio. Tested at 0 W: 5 Tune cycles and 2 full FT8 transmissions, 7/7 clean
-> un-keys. **If you installed beta 2026-11-08, update.**
+> **Transmit audio fix, replaces beta 2026-11-08-2.** The previous beta's transmit audio was **garbled on air**: it keyed
+> and un-keyed fine, but nobody could decode it. Thanks to G4BWQ for reporting it. The radio plays each transmit sample
+> the moment it arrives, and the beta sent the audio in short bursts. This version sends every sample evenly spaced
+> (10473 samples/s, 2 stop bits per byte). **If you installed beta 2026-11-08-2, update.**
 
-## New in this beta: crash recovery
+## Tested on the air
+macOS, firmware 2.00x, 20 m FT8:
+- Clean transmit audio checked on a second receiver and with a microphone (clean FT8 tones, no clicks).
+- **190+ PSK Reporter spots in 5 minutes** after the fix (best +19 dB, coast to coast plus Canada, Colombia, Cayman Islands).
+- QSOs completed with WSJT-X Auto Seq; the radio un-keyed every time, no driver warnings.
 
-Testing on firmware 2.00x showed that **pressing the radio's buttons or turning its knobs while CAT audio streams and
-WSJT-X is connected can crash the radio** (it reboots). This is a firmware issue: the same presses without CAT polling
-were fine, and mode changes made over CAT were fine. The previous driver then kept the radio in a **reboot loop**. Now:
+Windows (x64 and ARM64) and Linux have **not** been tested with the new transmit pacing yet. Reports welcome.
 
-- While the radio isn't responding, the driver **answers WSJT-X from its last known state** and sends nothing to the
-  radio, so WSJT-X stays connected and the radio can boot.
-- Streaming is restarted only once the radio has **finished booting**.
-- A **boot-loop breaker** pauses all traffic for 60 s if the radio crashes 3 times in a minute (for example when it's
-  left in CW mode), and tells you what to do.
-- `IF;` polls are answered by the driver from the radio's frequency and mode replies, cutting CAT traffic to the radio.
-
-**How to avoid the crash:** set filter, volume and TX Drive on the radio before starting WSJT-X, set WSJT-X
-**Settings → Radio → Mode: USB**, and don't use the radio's controls while WSJT-X is connected.
+## Also new
+- Manual: WSJT-X **Force Control Lines** blank (macOS/Linux Hamlib error), **Pwr slider** advice for FT8, **Auto Seq
+  "CQ: First"** so WSJT-X answers callers, **hearing receive audio** on the computer's speakers, macOS Microphone
+  permission, and the radio's **CQ Interval** (menu 4.1), which can make it key up by itself after a crash reset.
+- Linux (untested): ModemManager udev rule, ALSA loopback mode for systems without PulseAudio/PipeWire, and
+  `--rx-audio` / `--tx-audio` options to choose audio devices by name.
+- Option `--stop-bits 1|2` (default 2) for comparison with the factory pacing.
+- Clearer boot-loop breaker message.
 
 ## Downloads
 
@@ -31,30 +31,17 @@ were fine, and mode changes made over CAT were fine. The previous driver then ke
 |---|---|
 | `Setup_W5PL_truSDX_Driver_beta_x64.exe` | Windows 10/11 on Intel/AMD. CAT on **COM8**. |
 | `Setup_W5PL_truSDX_Driver_beta_arm64.exe` | Windows 10/11 on ARM (Snapdragon / Copilot+). CAT on **127.0.0.1:4542**. |
-| `W5PL-truSDX-Driver-beta-2026-11-08-2-macos-linux.zip` | macOS (`macOS/install.sh`) and Linux (`linux/install.sh`, untested). |
+| `W5PL-truSDX-Driver-beta-2026-11-08-3-macos-linux.zip` | macOS (`macOS/install.sh`) and Linux (`linux/install.sh`, untested). |
 | `SHA256SUMS.txt` | Checksums of the files above. |
 
 **Updating:** Windows: run the new setup over the old one. macOS/Linux: replace the folder and run `install.sh` again.
-Read the **[manual](MANUAL.md)**, and do your first transmit test at **0 W**.
-
-## Everything else (since beta 2026-11-07)
-- No more stuck transmit (8000 samples/s transmit audio, reliable un-key), fast clean CAT, no receive-audio 100% jumps
-  or gaps, clean reconnects, macOS installer, Windows on ARM edition, network CAT, uninstallers.
-
-Full list with measurements: [CHANGES.md](CHANGES.md).
-
-## Tested
-- macOS 13, (tr)uSDX firmware 2.00x, WSJT-X v3.3.0-beta5 / Hamlib 4.7.2: CAT, Tune, full FT8 cycles, reconnects;
-  the front-panel crash reproduced and isolated (Tests A–E); CAT mode changes in all modes; WSJT-X stays connected
-  through a radio crash. After
-  the changes, 80 s in CW with WSJT-X polling caused no crash. The boot-loop breaker is in place but hasn't been
-  triggered in a test yet.
-- Windows on ARM: installer, including removing the factory driver.
-- **Not yet tested:** Windows on Intel/AMD hardware, Linux. Reports welcome.
+Read the **[manual](MANUAL.md)**, and do your first transmit test at **low power**.
 
 ## Known limitations
-- Firmware 2.00x: front-panel use while WSJT-X is connected can crash the radio (see above). Power and filter width
-  can't be set over CAT on this firmware.
+- Firmware 2.00x: using the radio's buttons or knobs while WSJT-X is connected can crash the radio; the driver
+  recovers. Set filter, volume and TX Drive before starting WSJT-X. After a crash, check the radio's settings.
 - Receive audio is 8-bit at 7812 samples/s. The radio's **volume sets the receive level**: use 10–12.
 - Windows ARM64: CAT over the network only (no COM port, no RTS/DTR PTT).
 - The installers aren't code-signed: Windows SmartScreen shows a warning (More info → Run anyway).
+
+Full list with measurements: [CHANGES.md](CHANGES.md).

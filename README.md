@@ -4,7 +4,8 @@
 programs. No audio cables, no external sound card: a laptop, the radio, one USB cable and an antenna.
 
 Based on [trusdx-audio](https://github.com/threeme3/trusdx-audio) by SQ3SWF and PE1NNZ, with the problems that made it
-unreliable fixed. Above all, **the radio no longer gets stuck in transmit**.
+unreliable fixed. Above all, **the radio no longer gets stuck in transmit**, and transmit audio is clean and evenly
+paced.
 
 | | |
 |---|---|
@@ -53,6 +54,7 @@ Download from the [Releases](../../releases) page.
 ## What's fixed
 
 - Radio **stuck in transmit** after long transmissions (transmit audio overflowed the 115200-baud link).
+- **Rough or garbled transmit audio**: the audio is now evenly paced (2 stop bits, 10473 samples/s).
 - **Un-key** commands ignored; audio streaming not restored after transmit.
 - **Slow, retried CAT** commands and Hamlib *protocol error* / *timeout* messages.
 - Receive audio input **jumping to 100%**, and short **receive-audio gaps**.

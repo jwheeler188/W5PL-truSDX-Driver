@@ -45,13 +45,13 @@ sound card for audio. This driver sits in between:
 - **Receive audio:** the radio streams 8-bit audio at 7812 samples/s over USB. The driver plays it into a virtual audio
   cable, which WSJT-X records from.
 - **Transmit audio:** WSJT-X plays into the virtual audio cable. The driver records it and streams it to the radio at
-  8000 samples/s while it is keyed.
+  10473 samples/s while it is keyed, evenly spaced (2 stop bits per byte).
 - **PTT:** WSJT-X keys the radio by CAT (recommended). RTS/DTR (Windows, COM8) and VOX (Linux) also work.
 
 No audio cables or external sound card are needed: a laptop, the (tr)uSDX, a USB cable and an antenna.
 
 ### What this version fixes
-Compared to the factory driver, it fixes **the radio staying stuck in transmit**, slow and retried CAT commands,
+Compared to the factory driver, it fixes **the radio staying stuck in transmit** and **rough transmit audio**, slow and retried CAT commands,
 Hamlib "protocol error" / timeout messages, receive audio jumping to 100%, and short receive-audio gaps. It adds
 macOS and Windows-on-ARM support and network CAT. The full list, with measurements, is in [CHANGES.md](CHANGES.md).
 
@@ -218,10 +218,14 @@ Start the driver first and wait for `(tr)uSDX driver OK!`, then start WSJT-X.
 | **PTT Method** | **CAT** (RTS/DTR also works) | **CAT** | **CAT** | **CAT** (or VOX) |
 | **Mode** | **USB** | USB | USB | USB |
 | Split Operation | None | None | None | None |
+| Force Control Lines (DTR / RTS) | **blank** | **blank** | **blank** | **blank** |
 | Transmit Audio Source | either | either | either | either |
 
 **Poll Interval:** any value works with this driver. On firmware 2.00x, a few seconds (2–5 s) means less CAT traffic
 while you operate, which seemed to make the front-panel crash (section 17) less likely.
+
+**Force Control Lines:** leave DTR and RTS blank. On macOS and Linux the CAT port is a virtual port, and Hamlib reports
+an error when WSJT-X tries to force its control lines.
 
 **Mode: USB** makes WSJT-X put the radio in USB by CAT (safe), including if it was left in another mode. *None* also
 works, but then the radio must already be in USB.
@@ -246,8 +250,26 @@ Click **Test CAT**. It should turn **green**. Then **Test PTT**: the radio shoul
 when you click it again. Click **OK**.
 
 ### Transmit level
-Set the WSJT-X **Pwr** slider (bottom right) so the radio isn't overdriven: start at about −10 dB and raise it until the
-radio's output stops increasing, then back off slightly. Overdriving distorts the signal and causes splatter.
+Set the output power with the radio's **TX Drive** (menu 3.3). The WSJT-X **Pwr** slider (bottom right) also changes
+the power when TX Drive is below 8: a lower slider means less RF. FT8 sends one steady tone at a time, so a high level
+doesn't distort it as long as the audio stays below full scale; near the top of the slider (just below the maximum) is
+right. For voice-like modes with a changing envelope, use a lower setting.
+
+### Auto Seq: answering callers
+With **Auto Seq** ticked, the drop-down below it decides what happens when someone answers your CQ: **CQ: None** never
+answers callers by itself (you double-click), **CQ: First** answers the first caller, **CQ: Max Dist** the farthest.
+**Settings → General → "Disable Tx after sending 73"** stops transmitting after each QSO; untick it to go straight on to
+the next caller (you are still the control operator: stay at the station). Put your Tx frequency between about 500 and
+2000 Hz; many stations' receive filters cut off signals near 2700 Hz.
+
+### Hearing receive audio on the computer (optional)
+The driver sends receive audio only to the virtual cable. To also hear it on speakers or headphones:
+- **macOS:** Audio MIDI Setup → **+** → **Create Multi-Output Device**, tick **BlackHole 2ch** (primary) and your
+  speakers (with **Drift Correction**), then start the driver with `--rx-audio "Multi-Output"`. Keep WSJT-X on
+  BlackHole 2ch.
+- **Windows:** Control Panel → Sound → Recording → **CABLE Output** → Properties → Listen → tick **Listen to this device**
+  and choose your speakers.
+- **Linux (PulseAudio/PipeWire):** `pactl load-module module-loopback source=TRUSDX.monitor`.
 
 ---
 
@@ -335,7 +357,8 @@ run the `.exe` from a command prompt).
 | `--alsa` | (Linux launcher `trusdx.sh` only) Use the ALSA loopback even when PulseAudio/PipeWire runs. |
 | `--no-rtsdtr` | (Windows) Ignore RTS/DTR on COM8 as PTT. |
 | `--vox` | (Linux) Key the radio when transmit audio arrives (VOX PTT). |
-| `--tx-rate N` | Transmit audio sample rate sent to the radio (default **8000**). Don't use 11520: it overflows the radio on long transmissions and leaves it stuck keyed. |
+| `--tx-rate N` | Transmit audio sample rate sent to the radio (default **10473**, what the link carries with 2 stop bits). |
+| `--stop-bits 1\|2` | Serial stop bits to the radio (default **2**: the link spaces the transmit audio evenly). `1` is the factory setting, for comparison only: with 1 stop bit, 11520 S/s fills the link and can leave the radio stuck keyed or rebooting, and lower rates sound garbled. |
 | `--forward-if` | Send WSJT-X's `IF;` polls to the radio instead of answering them from its `FA;`/`MD;` replies (the default since beta 2026-11-08; section 16). |
 | `-B N`, `--block-size N` | Receive audio block size (default 512). |
 | `-T N`, `--tx-block-size N` | Serial read block size (default 48). |
@@ -374,7 +397,11 @@ Instead of a virtual serial port, the driver can accept CAT on a local network p
 | **No decodes**, but the input meter and waterfall look normal | Usually **noise, not the driver**: the waterfall is speckled with no FT8 traces, and the noise is louder than usual at the same volume. The most common source is the **laptop's power charger** (also USB hubs, LED lights, monitors). Unplug the charger and run on battery, or move it away from the antenna and the radio's USB cable. Also check the antenna connection, the radio's filter (3 kHz or full, not narrower), and the band (20 m fades after sunset; try 40 m). |
 | WSJT-X input meter **stuck at 100% / red** | Should no longer happen with this version. If it does, restart the driver and report it with a `-v` log. |
 | **No waterfall** but CAT works | WSJT-X Audio → Input must be CABLE Output / BlackHole 2ch / Monitor of TRUSDX. On Linux, check routing in pavucontrol. |
-| Transmit shows on the radio but **no output power** | Check the WSJT-X Pwr slider, the radio's power setting, and that WSJT-X Audio → Output is CABLE Input / BlackHole 2ch / TRUSDX. |
+| Transmit shows on the radio but **no output power** | Check the WSJT-X Pwr slider, the radio's TX Drive, and that WSJT-X Audio → Output is CABLE Input / BlackHole 2ch / TRUSDX. **macOS:** System Settings → Privacy & Security → **Microphone** must allow Terminal, or macOS gives the driver silence instead of WSJT-X's audio. |
+| Transmit audio sounds **rough, warbly or clicky** on another receiver | You're running beta 2026-11-08-2 or older, or `--stop-bits 1`. Update; this version sends the audio evenly paced. |
+| Radio **beeps or keys up by itself** a few seconds after a transmission | Its **CQ Interval** (menu 4.1) is set: the radio sends its own CW CQ message. Set it to 0. A crash can change this setting. |
+| WSJT-X doesn't answer stations that **reply to your CQ** | Set the drop-down below **Auto Seq** to **CQ: First** (section 5). |
+| Hamlib error at **Test CAT / Test PTT** on macOS/Linux | Settings → Radio → **Force Control Lines**: set DTR and RTS to blank. |
 | `WARNING: (tr)uSDX left TX audio mode` | The radio left audio mode during a transmission; the driver pauses transmit audio so the un-key gets through. Please report it with a `-v` log. |
 | macOS: "cannot be opened because it is from an unidentified developer" | Right-click the `.command` file → Open → Open. |
 | Windows: SmartScreen blocks the installer | More info → Run anyway. The installer is unsigned. |
@@ -471,8 +498,13 @@ CAT commands the (tr)uSDX answers on 2.00x (from DL2MAN's documentation and test
 
 What the driver does to make that reliable:
 
-- **Transmit audio rate:** 8000 samples/s, sent in even 20 ms pieces. The factory 11520 samples/s used 100% of the
-  115200-baud link and overflowed the radio on long transmissions, which then missed the `RX;` and stayed keyed.
+- **Transmit audio pacing:** the radio plays each transmit byte the moment it arrives (DL2MAN: 11520 Hz, "or lower if
+  samples are sent continuously at equal intervals"). The factory 11520 samples/s used 100% of the 115200-baud link:
+  the radio missed bytes (rough audio) and, on long transmissions, the `RX;` (stuck keyed, sometimes a reboot). Beta
+  2026-11-08-2 sent 8000 samples/s in 20 ms bursts, which the radio played too fast with gaps (garbled on air). Now the
+  port uses **2 stop bits**, so the link itself spaces the bytes evenly at 115200/11 = **10473 samples/s**, leaving the
+  radio about 9% spare time per byte; 40 ms of silence after `US` absorbs audio-input jitter. Tested on air
+  2026-11-08: clean by ear and on a second receiver, hundreds of PSK Reporter spots, completed QSOs, un-key in 0.1 s.
 - **Un-key sequence:** stop the audio, 200 ms quiet, `;RX;`, 100 ms, `;UA2;` (the radio stops streaming after a
   transmission, so streaming is re-enabled). A second un-key follows after 1.5 s only if receive audio hasn't returned.
 - **CAT during transmit:** polls such as `IF;` `FA;` `MD;` would interrupt the audio stream, so they're answered from the
@@ -499,7 +531,8 @@ What the driver does to make that reliable:
   reboots again while left in CW). The same presses with streaming but no CAT polls, or with nothing connected, were
   fine, and mode changes made over CAT (including CW, 90 s with 525 polls) were fine too. So: set the radio up first,
   change mode from WSJT-X, and don't touch the radio's controls while WSJT-X is connected. The driver recovers from a
-  crash by itself. 2.00x also has no setting to turn off its CW decoder or to lock the mode.
+  crash by itself. DL2MAN's menu list shows **2.1 CW Decoder ON/OFF**; if your radio has it, turning it off is worth a
+  try, though the tests point to the front-panel input rather than the decoder.
 - **After a crash, check the radio's settings before transmitting.** A crash while the radio saves a mode or filter
   change can reset settings: in testing, TX Drive changed from 0 to 8 (so a "0 W" test would no longer be 0 W) and
   the mode came back as CW, and the stored CQ/CW messages were garbled, i.e. the radio's saved settings were

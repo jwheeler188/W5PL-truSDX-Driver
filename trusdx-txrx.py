@@ -49,9 +49,13 @@ import sys
 from sys import platform
 
 DRIVER_NAME = "W5PL Driver for DL2MAN (tr)uSDX"   # based on trusdx-audio by SQ3SWF / PE1NNZ
-DRIVER_VERSION = "beta-2026-11-08-2 (reliable un-key, 8000 S/s TX, CAT parser, crash recovery)"
+DRIVER_VERSION = "beta-2026-11-08-3 (clean TX audio: even pacing, 10473 S/s with 2 stop bits)"
 audio_tx_rate_trusdx = 4800
-audio_tx_rate = 8000   # fix: was 11520 (100% of the 115200 baud link). Measured: 13 s TX at 11520 left the trx stuck keyed; 8000 and 9600 un-keyed 6/6 in ~0.3 s
+audio_tx_rate = 10473  # fix: was 11520 (100% of the 115200 baud link: trx misses bytes -> rough audio, stuck/crashed TX).
+# The trx plays each TX byte the moment it arrives (DL2MAN: "11520 Hz, or lower if samples are sent continuously at
+# equal intervals rather than in blocks"), so a lower rate sent in blocks (beta 8000 S/s in 20 ms pieces) is played too
+# fast with gaps = garbled on air (heard 2026-11-08). With 2 stop bits the link itself paces the bytes evenly at
+# 115200/11 = 10473 B/s and the trx gets ~9% spare time per byte. Tested on air 2026-11-08: cleaner than 11520, un-key 0.1 s.
 audio_rx_rate = 7812
 buf = []    # buffer for received audio
 # fix: RX audio was played as unsigned 8-bit (silence = 128). Whenever the stream ran dry (TX, an underrun, a
@@ -272,6 +276,9 @@ def start_tx(ser, pastream, why):
     time.sleep(0.05)
     ser.write(b"US")
     ser.flush()
+    # fix: ~40 ms of silence first (no flush: it must stay queued), so jitter in the audio input never leaves a gap on
+    # the link (the trx would hear one as a click). The link drains as fast as audio arrives, so the backlog stays.
+    ser.write(bytes([0x80]) * (audio_tx_rate // 25))
     status[0] = True
     tx_broken[0] = False
     log(f"I: TX0; + US ({why})")
@@ -455,8 +462,8 @@ def transmit_audio_via_serial(pastream, ser, cat, gen=None):
                     # reliably in CW mode; saved in CW it crashed again on every boot. Stop all traffic so it can settle.
                     pause_until[0] = now + 60; outage_times.clear()
                     print(f"{datetime.datetime.utcnow()} WARNING: the (tr)uSDX crashed 3 times in a minute. Pausing all CAT traffic to it for 60 s.\n"
-                          "    Firmware 2.00x crashes when its mode/filter is changed (especially to CW) while CAT audio streams.\n"
-                          "    Switch the radio back to USB (power-cycle it if it is frozen); the driver retries in 60 s.")
+                          "    Firmware 2.00x can crash when its controls are used while CAT audio streams, and loops if left in CW.\n"
+                          "    Switch the radio off and on, check it is in USB and its settings (TX Drive, CQ Interval 0); the driver retries in 60 s.")
             if now < pause_until[0]:
                 ua_tries[0] = 0; ua_gap[0] = 1.0; outage[0] = True   # one fresh attempt when the pause ends
             elif trx_silent(now) and now - ua_ts[0] > ua_gap[0] and (ua_tries[0] == 0 or now - rx_any_ts[0] > 5.0):
@@ -661,7 +668,8 @@ def run():
         try:
             # fix: was write_timeout=0 (non-blocking): during TX the link is full of audio, so pieces of the
             # audio, ';', 'US' and even 'RX;' were silently dropped -> E; floods and a trx stuck in TX.
-            ser = serial.Serial(find_serial_device(trusdx_serial_dev), 115200, write_timeout = 2)
+            ser = serial.Serial(find_serial_device(trusdx_serial_dev), 115200, write_timeout = 2,
+                                stopbits = serial.STOPBITS_TWO if config['stop_bits'] == 2 else serial.STOPBITS_ONE)
         except Exception as e:
             dev = find_serial_device(trusdx_serial_dev)
             print(f"truSDX device not found ({e})" if not dev else f"truSDX on {dev} could not be opened ({e}) - is another program using it?")
@@ -757,14 +765,15 @@ if __name__ == '__main__':
     #parser.add_argument("-B", "--block-size", type=int, default=512 if platform == "win32" else 32, help="RX Block size")
     parser.add_argument("-B", "--block-size", type=int, default=512, help="RX Block size")
     parser.add_argument("-T", "--tx-block-size", type=int, default=48, help="TX Block size")
-    parser.add_argument("--tx-rate", type=int, default=8000, help="TX audio sample rate sent to the trx (11520 overflows it on long TX)")
+    parser.add_argument("--tx-rate", type=int, default=10473, help="TX audio sample rate sent to the trx (default 10473 = what 2 stop bits carry; 11520 overflows it)")
+    parser.add_argument("--stop-bits", type=int, choices=[1, 2], default=2, help="serial stop bits to the trx (2 = even byte pacing with spare time for the trx; 1 = factory)")
     parser.add_argument("--forward-if", action="store_true", default=False, help="send IF; polls to the trx instead of answering them from its FA/MD replies")
     parser.add_argument("--rawlog", default=os.environ.get('TRUSDX_RAWLOG', ''), help="debug: file to record raw data from the trx")
     args = parser.parse_args()
     config = vars(args)
     audio_tx_rate = config['tx_rate']
     if config['rawlog']: RAWLOG[0] = open(config['rawlog'], 'w')
-    print(f"{DRIVER_NAME} {DRIVER_VERSION} - TX audio {audio_tx_rate} S/s  (based on trusdx-audio by SQ3SWF / PE1NNZ)")
+    print(f"{DRIVER_NAME} {DRIVER_VERSION} - TX audio {audio_tx_rate} S/s, {config['stop_bits']} stop bits  (based on trusdx-audio by SQ3SWF / PE1NNZ)")
     if platform == "win32":
         try: __import__("ctypes").windll.kernel32.SetConsoleTitleW(f"{DRIVER_NAME} {DRIVER_VERSION}")
         except Exception: pass

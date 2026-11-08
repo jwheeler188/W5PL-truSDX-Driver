@@ -1,6 +1,25 @@
 # Changes
 
-## Next (unreleased): Linux improvements (untested on Linux)
+## beta 2026-11-08-3 (clean transmit audio)
+
+Reported by G4BWQ (issue #1): transmit audio was a low "warble" with little power. Confirmed on a second receiver: the
+beta's transmit audio sounded nothing like FT8, and PSK Reporter had no spots in 2 hours.
+
+| # | Problem | Fix |
+|---|---|---|
+| 37 | **Garbled transmit audio.** The radio plays each transmit byte the moment it arrives (DL2MAN: 11520 Hz "or lower if samples are sent continuously at equal intervals rather than in blocks"). Beta 2026-11-08-2 sent 8000 S/s in 20 ms bursts; each burst crossed the link at full speed, so the radio played it ~44% too fast, then paused, 50 times a second. The factory 11520 S/s sounded better but fills the link: the radio misses bytes (roughness) and, on long transmissions, the `RX;`. Re-tested on air 2026-11-08 at 11520: stuck/rebooting radio after transmissions, and a 3.1 s and a 9 s un-key in a direct tone test. | The serial port now uses **2 stop bits**, so the link itself spaces the bytes evenly at 115200/11 = **10473 B/s**, and transmit audio is sent at **10473 S/s**. The radio gets ~9% spare time per byte. 40 ms of silence after `US` absorbs audio-input jitter. New option `--stop-bits 1\|2` (default 2). |
+| 38 | The boot-loop breaker's message blamed only front-panel mode/filter changes. | It now also says to power-cycle and check the radio's settings (TX Drive, CQ Interval). |
+
+Tested on air 2026-11-08 (macOS, firmware 2.00x, 20 m, main antenna): direct tone test 10473/2 stop bits cleaner than
+11520 by ear and un-keyed in 0.1 s first time; FT8 checked on a second receiver and with the MacBook microphone (clean
+8-tone FT8, no clicks); **190+ PSK Reporter spots in 5 minutes, best +19 dB, 270+ in 20 minutes later**; QSOs completed
+(N4OPI, VE3WEJ, K3YQA, WB8P, …); no stuck transmit and no driver warnings. Windows: not yet tested at the new rate.
+
+Manual additions: Force Control Lines blank (thanks G4BWQ), Pwr slider advice for FT8, WSJT-X Auto Seq "CQ: First",
+hearing receive audio on the computer, macOS Microphone permission, radio CQ Interval (menu 4.1) keying the radio by
+itself, DL2MAN's CW Decoder menu item.
+
+## Linux improvements (untested on Linux)
 
 Compared with miltonics/truSDX-Linux, a Linux-only fork that is tested on several distros, our Linux setup lacked
 two things; both added:

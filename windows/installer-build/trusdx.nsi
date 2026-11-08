@@ -3,7 +3,7 @@
 
 !define NAME "W5PL Driver for DL2MAN (tr)uSDX"
 !define EXE "W5PL truSDX Driver"   ; Nuitka output name (build.ps1)
-!define VERSION "beta-2026-11-08-2"
+!define VERSION "beta-2026-11-08-3"
 !define REGPATH_UNINSTSUBKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}"
 Name "${NAME}"
 ; Beta: one script, two builds. makensis trusdx.nsi = x64/x86 (VSPE COM8/COM9 pair, bundled VB-CABLE + CH340).
