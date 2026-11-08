@@ -255,6 +255,9 @@ Do this with the radio's power set to **0 W** (menu), or into a dummy load, befo
 
 If the radio stays keyed at any point: **switch the radio off**, then follow section 13.
 
+> If the radio has crashed or rebooted since you last checked, look at **TX Drive** before a 0 W test: a crash can
+> reset it (section 17).
+
 ---
 
 ## 7. Everyday operation
@@ -366,6 +369,7 @@ Instead of a virtual serial port, the driver can accept CAT on a local network p
 | **Radio reboots** (display restarts) when you press a button or turn a knob | Firmware 2.00x crashes when its controls are used while CAT audio streams and WSJT-X polls (section 17). The driver recovers by itself. Set filter/volume/TX Drive before starting WSJT-X and leave the controls alone while it's connected. |
 | `(tr)uSDX not responding` … `responding again` | The radio crashed and rebooted; the driver kept WSJT-X connected and restarted streaming. No action needed. |
 | `crashed 3 times in a minute. Pausing all CAT traffic` | The radio keeps crashing, usually because it's in **CW** mode. Switch it back to **USB** (power-cycle it if it's frozen); the driver retries after 60 s. |
+| After a crash or reboot: **TX Drive, Semi QSK or other settings changed** | The crash can reset saved settings. Before transmitting, check TX Drive, Semi QSK (OFF), PA Bias, Ref freq and LPF Config (section 17). |
 | Radio **frozen** (display stuck, no reboot) | Power-cycle it. Nothing over USB can wake a hung radio. |
 | Windows: driver won't start, "VB-CABLE denied" / audio device errors | Windows made VB-CABLE its **default** sound device. Control Panel → Sound: set the computer's own speakers (Playback) and microphone (Recording) as default, then restart the driver. Select CABLE only inside WSJT-X. |
 | CAT drops out, or noise, only when the **12 V supply** is connected | Supply noise or a ground loop. A clip-on ferrite on the USB and power cables helps, as does a cleaner supply. |
@@ -483,6 +487,10 @@ What the driver does to make that reliable:
   fine, and mode changes made over CAT (including CW, 90 s with 525 polls) were fine too. So: set the radio up first,
   change mode from WSJT-X, and don't touch the radio's controls while WSJT-X is connected. The driver recovers from a
   crash by itself. 2.00x also has no setting to turn off its CW decoder or to lock the mode.
+- **After a crash, check the radio's settings before transmitting.** A crash while the radio saves a mode or filter
+  change can reset settings: in testing, TX Drive changed from 0 to 8 (so a "0 W" test would no longer be 0 W) and
+  the mode came back as CW. Check **TX Drive**, **Semi QSK (OFF)**, **PA Bias**, **Ref freq** and **LPF Config**
+  against your notes. Write down your calibration values (Ref freq, PA Bias, TX Drive) now, while they're right.
 - **Linux** hasn't been tested with this release yet.
 - Receive audio is **8-bit at 7812 samples/s** (a limit of the radio's USB streaming): audio above about 3.9 kHz doesn't
   exist, and the dynamic range depends on the volume setting (section 8). FT8/FT4/JS8 work well within that.
