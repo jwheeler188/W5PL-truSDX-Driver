@@ -14,7 +14,9 @@ macOS, firmware 2.00x, 20 m FT8:
 - **190+ PSK Reporter spots in 5 minutes** after the fix (best +19 dB, coast to coast plus Canada, Colombia, Cayman Islands).
 - QSOs completed with WSJT-X Auto Seq; the radio un-keyed every time, no driver warnings.
 
-Windows (x64 and ARM64) and Linux have **not** been tested with the new transmit pacing yet. Reports welcome.
+Windows on ARM64, 20 m FT8: **108 PSK Reporter spots in 6 minutes**, median −14 dB (Mac: −13 dB), best +16 dB.
+
+Windows x64 and Linux have **not** been tested with the new transmit pacing yet. Reports welcome.
 
 ## Also new
 - Manual: WSJT-X **Force Control Lines** blank (macOS/Linux Hamlib error), **Pwr slider** advice for FT8, **Auto Seq

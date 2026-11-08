@@ -13,7 +13,7 @@ beta's transmit audio sounded nothing like FT8, and PSK Reporter had no spots in
 Tested on air 2026-11-08 (macOS, firmware 2.00x, 20 m, main antenna): direct tone test 10473/2 stop bits cleaner than
 11520 by ear and un-keyed in 0.1 s first time; FT8 checked on a second receiver and with the MacBook microphone (clean
 8-tone FT8, no clicks); **190+ PSK Reporter spots in 5 minutes, best +19 dB, 270+ in 20 minutes later**; QSOs completed
-(N4OPI, VE3WEJ, K3YQA, WB8P, …); no stuck transmit and no driver warnings. Windows: not yet tested at the new rate.
+(N4OPI, VE3WEJ, K3YQA, WB8P, …); no stuck transmit and no driver warnings. Windows on ARM64 (CAT over TCP): 108 PSK Reporter spots in 6 minutes, median −14 dB, best +16 dB. Windows x64: not yet tested at the new rate.
 
 Manual additions: Force Control Lines blank (thanks G4BWQ), Pwr slider advice for FT8, WSJT-X Auto Seq "CQ: First",
 hearing receive audio on the computer, macOS Microphone permission, radio CQ Interval (menu 4.1) keying the radio by
