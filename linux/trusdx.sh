@@ -3,6 +3,7 @@
 #   ./trusdx.sh                  normal (CAT port /tmp/trusdx)
 #   ./trusdx.sh --cat-tcp 4542   CAT over the network: WSJT-X Serial Port 127.0.0.1:4542
 #   ./trusdx.sh -v               verbose log of every CAT command
+#   ./trusdx.sh --alsa           use the ALSA loopback (install.sh --alsa) even if PulseAudio/PipeWire runs
 # Audio: creates the virtual audio device "TRUSDX" (a null sink) if it doesn't exist, and connects the driver to it.
 #   In WSJT-X: Input = "Monitor of TRUSDX" (TRUSDX.monitor), Output = "TRUSDX".
 # Stop it: close this window, or press Ctrl+C twice (the first Ctrl+C restarts the driver)
@@ -20,8 +21,17 @@ if [[ -n "$PIDS" ]]; then
   kill $PIDS 2>/dev/null; sleep 2
 fi
 
+# Audio mode: PulseAudio/PipeWire if available (unless --alsa), otherwise the ALSA loopback set up by install.sh
+ALSA=0; ARGS=()
+for a in "$@"; do if [[ "$a" == "--alsa" ]]; then ALSA=1; else ARGS+=("$a"); fi; done
+if [[ $ALSA == 0 ]] && ! { command -v pactl >/dev/null && pactl info >/dev/null 2>&1; }; then ALSA=1; fi
 MOVER=""
-if command -v pactl >/dev/null && pactl info >/dev/null 2>&1; then
+if [[ $ALSA == 1 ]]; then
+  grep -q "W5PL truSDX driver" "$HOME/.asoundrc" 2>/dev/null || { echo "ALSA loopback not set up: run ./install.sh --alsa first."; exit 1; }
+  grep -q Loopback /proc/asound/cards 2>/dev/null || { echo "ALSA loopback card missing: sudo modprobe snd-aloop id=Loopback (or reboot)."; exit 1; }
+  echo "Audio: ALSA loopback. In WSJT-X: Input trusdx_rx, Output trusdx_tx"
+  ARGS+=(--rx-audio trusdx_drv_rx --tx-audio trusdx_drv_tx)
+elif command -v pactl >/dev/null && pactl info >/dev/null 2>&1; then
   if ! pactl list short sinks | awk '{print $2}' | grep -qx TRUSDX; then
     pactl load-module module-null-sink sink_name=TRUSDX sink_properties=device.description=TRUSDX >/dev/null \
       && echo "Created virtual audio device TRUSDX"
@@ -39,9 +49,6 @@ if command -v pactl >/dev/null && pactl info >/dev/null 2>&1; then
     done ) &
   MOVER=$!
   trap '[[ -n "$MOVER" ]] && kill $MOVER 2>/dev/null' EXIT
-else
-  echo "NOTE: pactl/PulseAudio/PipeWire not available - the driver uses the default audio device."
-  echo "      Route it yourself (e.g. snd-aloop), see the manual."
 fi
 
-$PY ../trusdx-txrx.py "$@"
+$PY ../trusdx-txrx.py "${ARGS[@]}"

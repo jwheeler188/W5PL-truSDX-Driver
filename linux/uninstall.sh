@@ -19,6 +19,14 @@ if command -v pactl >/dev/null; then
   done
 fi
 [[ -L /tmp/trusdx ]] && rm -f /tmp/trusdx && say "Removed /tmp/trusdx"
+if grep -q "W5PL truSDX driver" "$HOME/.asoundrc" 2>/dev/null; then
+  sed -i '/^# >>> W5PL truSDX driver >>>/,/^# <<< W5PL truSDX driver <<</d' "$HOME/.asoundrc" && say "Removed the truSDX ALSA devices from ~/.asoundrc"
+fi
+SUDO=""; [[ $EUID -ne 0 ]] && SUDO="sudo"
+for f in /etc/modules-load.d/trusdx-snd-aloop.conf /etc/modprobe.d/trusdx-snd-aloop.conf /etc/udev/rules.d/77-trusdx-modemmanager-ignore.rules; do
+  [[ -f $f ]] && $SUDO rm -f "$f" && say "Removed $f"
+done
+command -v udevadm >/dev/null && $SUDO udevadm control --reload-rules 2>/dev/null || true
 rm -rf .venv ../__pycache__
 say "Done. You can now delete the release folder: $(dirname "$HERE")"
 echo "Kept (shared with other software). To remove them too, e.g. on Debian/Ubuntu:"

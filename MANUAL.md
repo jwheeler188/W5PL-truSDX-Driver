@@ -177,14 +177,23 @@ than stopping it. Starting it again stops a copy that's already running.
      once** afterwards;
    - offers to remove **brltty**, a Braille-display service that grabs the radio's CH340 USB port on Ubuntu and Debian
      (answer **no** if you use a Braille display);
-   - warns if **ModemManager** is running, since it can probe the radio's port for a few seconds after you plug it in.
+   - adds a **udev rule** so **ModemManager** ignores the radio's USB port (CH340, 1a86:7523). ModemManager keeps working
+     for real modems; without the rule it can grab the radio for a few seconds after you plug it in;
+   - sets up audio: with **PulseAudio or PipeWire** nothing is needed now (the launcher creates the device). On systems
+     **without** them, or with `./install.sh --alsa`, it sets up the **ALSA loopback** (`snd-aloop`, loaded at boot) and
+     adds the devices `trusdx_rx` / `trusdx_tx` to your `~/.asoundrc` (they convert sample rates for every program).
 2. Start the driver:
    ```bash
    ./trusdx.sh
    ```
-   It creates a virtual audio device called **`TRUSDX`** (a PulseAudio/PipeWire "null sink") and connects the driver to
-   it automatically.
-3. In WSJT-X use Serial Port **`/tmp/trusdx`**, audio Input **`Monitor of TRUSDX`** and Output **`TRUSDX`**.
+   With PulseAudio/PipeWire it creates a virtual audio device called **`TRUSDX`** (a "null sink") and connects the driver
+   to it automatically. Without them (or with `./trusdx.sh --alsa`) it uses the ALSA loopback from step 1.
+3. In WSJT-X use Serial Port **`/tmp/trusdx`** (or `127.0.0.1:4542` with `--cat-tcp 4542`) and audio:
+
+   | Audio system | WSJT-X Input | WSJT-X Output |
+   |---|---|---|
+   | PulseAudio / PipeWire | `Monitor of TRUSDX` | `TRUSDX` |
+   | ALSA loopback | `trusdx_rx` | `trusdx_tx` |
 
 If the driver's audio doesn't reach WSJT-X, open **pavucontrol** while the driver runs: on the *Playback* tab set the
 driver (python3) to **TRUSDX**, and on the *Recording* tab set it to **Monitor of TRUSDX**.
@@ -321,6 +330,9 @@ run the `.exe` from a command prompt).
 | `--cat-tcp PORT` | CAT over a local network port `127.0.0.1:PORT` instead of a virtual serial port (section 11). `0` = off. |
 | `--unmute` | Keep the radio's speaker on while the driver runs. |
 | `--direct` | Use the system's default audio devices instead of BlackHole / VB-CABLE / TRUSDX. |
+| `--rx-audio NAME` | Audio device the driver **plays receive audio to** (the app records from it). Any part of the device name; `-v` lists the devices. |
+| `--tx-audio NAME` | Audio device the driver **records transmit audio from** (the app plays into it). |
+| `--alsa` | (Linux launcher `trusdx.sh` only) Use the ALSA loopback even when PulseAudio/PipeWire runs. |
 | `--no-rtsdtr` | (Windows) Ignore RTS/DTR on COM8 as PTT. |
 | `--vox` | (Linux) Key the radio when transmit audio arrives (VOX PTT). |
 | `--tx-rate N` | Transmit audio sample rate sent to the radio (default **8000**). Don't use 11520: it overflows the radio on long transmissions and leaves it stuck keyed. |
@@ -413,8 +425,9 @@ For un-key problems, `tools/unkey_test.py` measures the radio's un-key timing di
   run its setup again and click **Remove Driver**.
 - **macOS:** run `macOS/uninstall.sh`. It stops the driver and removes its Python environment and `/tmp/trusdx`, then asks
   whether to also remove BlackHole 2ch and PortAudio (default: keep). Then delete the folder.
-- **Linux:** run `linux/uninstall.sh`. It stops the driver and removes the TRUSDX audio device, `/tmp/trusdx` and any
-  private Python environment. It keeps the distribution packages and your group membership, and prints the commands to
+- **Linux:** run `linux/uninstall.sh`. It stops the driver and removes the TRUSDX audio device, `/tmp/trusdx`, the
+  ModemManager udev rule, the ALSA loopback entries in `~/.asoundrc` and its `snd-aloop` boot settings, and any private
+  Python environment. It keeps the distribution packages and your group membership, and prints the commands to
   remove those. Then delete the folder.
 
 ---

@@ -10,6 +10,7 @@ say() { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mNOTE:\033[0m %s\n' "$*"; }
 die() { printf '\033[31mERROR:\033[0m %s\n' "$*"; exit 1; }
 ask() { local a; read -r -p "$1 [y/N] " a; [[ "$a" == [yY]* ]]; }
+WANT_ALSA=0; [[ "${1:-}" == "--alsa" ]] && WANT_ALSA=1   # ./install.sh --alsa: also set up the ALSA loopback
 
 say "W5PL Driver for DL2MAN (tr)uSDX - Linux install"
 [[ -f ../trusdx-txrx.py ]] || die "trusdx-txrx.py not found next to the linux folder. Keep the release folder together."
@@ -73,9 +74,36 @@ if command -v brltty >/dev/null || systemctl list-unit-files 2>/dev/null | grep 
     esac
   fi
 fi
-if systemctl is-active --quiet ModemManager 2>/dev/null; then
-  warn "ModemManager is running. It can probe new serial ports for a few seconds after the radio is plugged in."
-  warn "If the radio is sometimes not found right after plugging in, wait 10 s, or: sudo systemctl disable --now ModemManager"
+# ModemManager probes new serial ports and can grab the radio for a few seconds after it is plugged in. Tell it to
+# ignore the (tr)uSDX's CH340 (USB 1a86:7523) only; ModemManager keeps working for real modems.
+UDEV_RULE=/etc/udev/rules.d/77-trusdx-modemmanager-ignore.rules
+if command -v udevadm >/dev/null && [[ ! -f $UDEV_RULE ]]; then
+  say "Telling ModemManager to leave the (tr)uSDX's USB port alone (udev rule for CH340 1a86:7523)"
+  echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"' | $SUDO tee $UDEV_RULE >/dev/null
+  $SUDO udevadm control --reload-rules && $SUDO udevadm trigger --subsystem-match=tty || true
+fi
+
+# Audio: PulseAudio/PipeWire (the TRUSDX device is created by trusdx.sh at every start), or the ALSA loopback for
+# systems without them (or with ./install.sh --alsa). ALSA "plug" devices convert the sample rate for every program.
+if command -v pactl >/dev/null && pactl info >/dev/null 2>&1 && [[ $WANT_ALSA == 0 ]]; then
+  say "PulseAudio/PipeWire found: trusdx.sh creates the TRUSDX audio device at each start (WSJT-X: TRUSDX / Monitor of TRUSDX)"
+else
+  say "Setting up the ALSA loopback (snd-aloop) for audio"
+  $SUDO modprobe snd-aloop id=Loopback || die "could not load the snd-aloop kernel module"
+  echo "snd-aloop" | $SUDO tee /etc/modules-load.d/trusdx-snd-aloop.conf >/dev/null
+  echo "options snd-aloop id=Loopback" | $SUDO tee /etc/modprobe.d/trusdx-snd-aloop.conf >/dev/null
+  ASRC="$HOME/.asoundrc"; touch "$ASRC"
+  sed -i '/^# >>> W5PL truSDX driver >>>/,/^# <<< W5PL truSDX driver <<</d' "$ASRC"
+  cat >> "$ASRC" <<'ALSA'
+# >>> W5PL truSDX driver >>> (added by linux/install.sh; removed by linux/uninstall.sh)
+# Loopback pairs: playback hw:Loopback,0,N is heard on capture hw:Loopback,1,N. "plug" converts the sample rate.
+pcm.trusdx_rx     { type plug; slave.pcm "hw:Loopback,1,0"; hint { show on; description "truSDX receive audio (WSJT-X input)" } }
+pcm.trusdx_tx     { type plug; slave.pcm "hw:Loopback,0,1"; hint { show on; description "truSDX transmit audio (WSJT-X output)" } }
+pcm.trusdx_drv_rx { type plug; slave.pcm "hw:Loopback,0,0"; hint { show on; description "truSDX driver side, receive (not for apps)" } }
+pcm.trusdx_drv_tx { type plug; slave.pcm "hw:Loopback,1,1"; hint { show on; description "truSDX driver side, transmit (not for apps)" } }
+# <<< W5PL truSDX driver <<<
+ALSA
+  say "ALSA loopback ready. In WSJT-X: Input trusdx_rx, Output trusdx_tx (trusdx.sh uses ALSA automatically)"
 fi
 
 command -v pactl >/dev/null || warn "pactl not found: create the TRUSDX audio device by hand (see the manual)."

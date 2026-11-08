@@ -90,7 +90,9 @@ def show_audio_devices():
         print(pyaudio.PyAudio().get_host_api_info_by_index(i))
         
 def find_audio_device(name, occurance = 0):
-    if platform == "linux" or platform == "linux2": return -1  # not supported
+    # Linux: the default device unless a name is given (--rx-audio/--tx-audio, e.g. the ALSA loopback set up by
+    # linux/install.sh); macOS/Windows: BlackHole / VB-CABLE by name as before.
+    if (platform == "linux" or platform == "linux2") and not name: return -1
     result = [i for i in range(pyaudio.PyAudio().get_device_count()) if name in (pyaudio.PyAudio().get_device_info_by_index(i)['name']) ]
     return result[occurance] if len(result) else -1 # return n-th matching device to name, -1 for no match
 
@@ -592,6 +594,13 @@ def run():
         if config['direct']:
            virtual_audio_dev_out = "" # default audio device
            virtual_audio_dev_in  = "" # default audio device
+        # new: choose the devices by name on any platform. --rx-audio: where the driver PLAYS receive audio (the app
+        # records it); --tx-audio: where the driver RECORDS transmit audio (the app plays into it).
+        if config['rx_audio']: virtual_audio_dev_in = config['rx_audio']
+        if config['tx_audio']: virtual_audio_dev_out = config['tx_audio']
+        for label, name in (("--rx-audio", config['rx_audio']), ("--tx-audio", config['tx_audio'])):
+            if name and find_audio_device(name) < 0:
+                print(f"WARNING: audio device '{name}' ({label}) not found - using the default device. Run with -v to list devices.")
 
         if config['verbose']:
             show_audio_devices()
@@ -740,6 +749,8 @@ if __name__ == '__main__':
     parser.add_argument("-v", "--verbose", action="store_true", default=False, help="increase verbosity")
     parser.add_argument("--vox", action="store_true", default=False, help="VOX audio-triggered PTT (Linux only)")
     parser.add_argument("--unmute", action="store_true", default=False, help="Enable (tr)usdx audio")
+    parser.add_argument("--rx-audio", default="", metavar="NAME", help="audio device the driver plays receive audio to (name or part of it); default: BlackHole 2ch / CABLE Input / Linux default")
+    parser.add_argument("--tx-audio", default="", metavar="NAME", help="audio device the driver records transmit audio from (name or part of it); default: BlackHole 2ch / CABLE Output / Linux default")
     parser.add_argument("--direct", action="store_true", default=False, help="Use system audio devices (no loopback)")
     parser.add_argument("--no-rtsdtr", action="store_true", default=False, help="Disable RTS/DTR-triggered PTT")
     parser.add_argument("--cat-tcp", type=int, default=0, metavar="PORT", help="CAT over TCP on 127.0.0.1:PORT instead of a virtual serial port (WSJT-X Serial Port: 127.0.0.1:PORT, PTT: CAT). Needed on Windows ARM64; 0 = off")

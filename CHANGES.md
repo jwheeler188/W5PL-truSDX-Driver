@@ -1,5 +1,16 @@
 # Changes
 
+## Next (unreleased): Linux improvements (untested on Linux)
+
+Compared with miltonics/truSDX-Linux, a Linux-only fork that is tested on several distros, our Linux setup lacked
+two things; both added:
+
+| # | Change |
+|---|---|
+| 34 | `linux/install.sh` adds a udev rule so **ModemManager ignores the (tr)uSDX's CH340** (1a86:7523) instead of only warning. ModemManager keeps working for other devices. |
+| 35 | **ALSA loopback** for systems without PulseAudio/PipeWire (or `install.sh --alsa` / `trusdx.sh --alsa`): `snd-aloop` loaded at boot, and `plug` devices `trusdx_rx` / `trusdx_tx` (apps) and `trusdx_drv_rx` / `trusdx_drv_tx` (driver) in `~/.asoundrc`. `plug` converts the sample rate, so the driver's audio code is unchanged. `uninstall.sh` removes all of it. |
+| 36 | New driver options **`--rx-audio NAME` / `--tx-audio NAME`** choose the audio devices by name on any platform (used by the ALSA mode); a missing device prints a warning. Tested on macOS. |
+
 ## beta 2026-11-08-2 (safety fix, replaces beta 2026-11-08)
 
 | # | Problem | Fix |
