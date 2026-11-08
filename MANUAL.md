@@ -83,8 +83,12 @@ You need:
 | **VOX** | **OFF** | Let WSJT-X key the radio by CAT |
 | **Volume** | **10–12** | Sets the receive audio level sent to WSJT-X. See section 8 |
 | Mode | **USB** | WSJT-X sets and keeps it with *Mode: USB* (section 5) |
-| **Filter** | **3 kHz** (or full) | FT8 signals use 200–3000 Hz |
-| **TX Drive** | your usual setting | Fine-tune power with WSJT-X's Pwr slider |
+| **Filter** (1.3) | **3000** (or Full) | FT8 signals use 200–3000 Hz; narrower filters cut off callers |
+| **NR** (1.9) | **0** (off) | Noise reduction averages the audio and smears FT8 tones |
+| **TX Drive** (3.3) | sets your power: **start low**, raise as needed | WSJT-X's Pwr slider changes the power too when TX Drive is below 8 (section 5) |
+| **CQ Interval** (4.1) | **0** | Otherwise the radio sends its own CW CQ message by itself a few seconds after each transmission |
+| CW Decoder (2.1), if your firmware has it | OFF | Not needed for digital modes |
+| Calibration (8.1–8.4: PA Bias, Ref freq, IQ Phase) | your calibrated values | Write them down: a crash can reset them (section 17) |
 
 > **Set the filter, volume and TX Drive on the radio before you start WSJT-X, then leave the radio's controls alone
 > while WSJT-X is connected.** On firmware 2.00x, pressing the radio's buttons or turning its knobs while CAT audio
@@ -249,6 +253,24 @@ works, but then the radio must already be in USB.
 Click **Test CAT**. It should turn **green**. Then **Test PTT**: the radio should show transmit, and return to receive
 when you click it again. Click **OK**.
 
+### Other WSJT-X settings that work well
+
+| Where | Setting | Recommended |
+|---|---|---|
+| Settings → General | Tx watchdog | **6–10 min** (stops transmitting if nobody answers) |
+| Settings → General | Disable Tx after sending 73 | your choice: off = straight on to the next caller (section "Auto Seq" below) |
+| Settings → Reporting | **Enable PSK Reporter Spotting** | **on**: lets you see on pskreporter.info who hears you, and how well |
+| Settings → Reporting | Accept UDP requests | on only if you use a companion program (GridTracker, JTAlert) |
+| Main window | **Auto Seq** | **on**, with **CQ: First** (or Max Dist) |
+| Main window | **Hold Tx Freq** | **on**, with **Tx** on a clear spot between about **500 and 2000 Hz** |
+| Main window | **Pwr** slider | near the top for FT8 (below) |
+| Decode menu | depth | **Normal**. Deep can finish too late to answer a caller in the next slot (decodes arrive ~14 s into the slot with this radio's audio delay) |
+| Computer clock | | synchronised (macOS/Windows automatic time is fine; WSJT-X's DT values should mostly be within ±0.5 s) |
+
+The WSJT-X **input level meter often reads 50–75 dB** with this radio, higher than the usual "about 30 dB" advice.
+That's normal: the radio sends 8-bit audio, and one 8-bit step already reads about 48 dB. Only red (clipping) is a
+problem (section 8).
+
 ### Transmit level
 Set the output power with the radio's **TX Drive** (menu 3.3). The WSJT-X **Pwr** slider (bottom right) also changes
 the power when TX Drive is below 8: a lower slider means less RF. FT8 sends one steady tone at a time, so a high level
@@ -323,8 +345,9 @@ for a virtual audio cable. So **the radio's volume knob is the receive level con
 - **Too low** (volume around 8–9 on a quiet band): the band noise is smaller than the smallest 8-bit step and rounds
   to digital silence. The WSJT-X input meter drops to zero or flickers, it looks like the audio keeps dropping out, and
   weak signals are lost.
-- **Right:** on band noise with the antenna connected, the WSJT-X input meter shows about **30–50 dB**. With a typical
-  antenna that's volume **10–12**.
+- **Right:** on band noise with the antenna connected, the WSJT-X input meter shows about **30–75 dB** and doesn't go
+  red. With a typical antenna that's volume **10–12**. On a full-size antenna and a busy band, 70 dB is fine: tested at
+  volume 10, the audio averaged −16 dBFS with no clipping.
 - **Too high:** strong signals clip and the WSJT-X meter goes red. Turn it down a step.
 
 Set it once on a quiet part of the band; it doesn't need changing between bands unless the noise level is very different.
