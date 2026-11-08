@@ -1,5 +1,15 @@
 # Changes
 
+## beta 2026-11-08-2 (safety fix, replaces beta 2026-11-08)
+
+| # | Problem | Fix |
+|---|---|---|
+| 31 | **beta 2026-11-08 could leave the radio keyed.** A radio stuck in TX sends no RX audio, so the new crash recovery took it for a crashed radio, and while "not responding" or paused it **did not send `RX;`** (WSJT-X's un-key never reached the radio). | **`RX;` always goes to the radio** at once, with the full un-key sequence, whatever state the driver thinks the radio is in. |
+| 32 | A key-up while the radio wasn't streaming keyed it **without TX audio mode** (`E;` flood, "left TX audio mode"). | The driver **refuses to key** a radio that isn't streaming (and during a pause), with a warning. |
+| 33 | WSJT-X re-opening the rig during TX sent `KS;`, which the driver passed to the radio and broke the TX audio stream. | Queries the driver can't answer from its cache get `?;` from the driver during TX. |
+
+Tested at 0 W: 5 Tune cycles and 2 full FT8 transmissions (12.5–14.2 s), 7/7 clean un-keys, no warnings.
+
 ## beta 2026-11-08
 
 Found while testing on firmware 2.00x: **using the radio's front panel (mode tap, filter double-tap, volume knob) while

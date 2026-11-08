@@ -1,7 +1,13 @@
-# W5PL Driver for DL2MAN (tr)uSDX — beta 2026-11-08
+# W5PL Driver for DL2MAN (tr)uSDX — beta 2026-11-08-2
 
 Audio and CAT over the (tr)uSDX's single USB cable for WSJT-X and other digital-mode programs. Based on trusdx-audio
 by SQ3SWF and PE1NNZ.
+
+> **Safety fix, replaces beta 2026-11-08.** In beta 2026-11-08 the new crash recovery could hold back WSJT-X's
+> un-key (`RX;`) when the radio looked unresponsive, which is also how a radio stuck in transmit looks: the radio could
+> stay keyed. Now `RX;` always reaches the radio, the driver refuses to key a radio that isn't streaming, and unknown
+> queries during TX no longer break the TX audio. Tested at 0 W: 5 Tune cycles and 2 full FT8 transmissions, 7/7 clean
+> un-keys. **If you installed beta 2026-11-08, update.**
 
 ## New in this beta: crash recovery
 
@@ -25,7 +31,7 @@ were fine, and mode changes made over CAT were fine. The previous driver then ke
 |---|---|
 | `Setup_W5PL_truSDX_Driver_beta_x64.exe` | Windows 10/11 on Intel/AMD. CAT on **COM8**. |
 | `Setup_W5PL_truSDX_Driver_beta_arm64.exe` | Windows 10/11 on ARM (Snapdragon / Copilot+). CAT on **127.0.0.1:4542**. |
-| `W5PL-truSDX-Driver-beta-2026-11-08-macos-linux.zip` | macOS (`macOS/install.sh`) and Linux (`linux/install.sh`, untested). |
+| `W5PL-truSDX-Driver-beta-2026-11-08-2-macos-linux.zip` | macOS (`macOS/install.sh`) and Linux (`linux/install.sh`, untested). |
 | `SHA256SUMS.txt` | Checksums of the files above. |
 
 **Updating:** Windows: run the new setup over the old one. macOS/Linux: replace the folder and run `install.sh` again.

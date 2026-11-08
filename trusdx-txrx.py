@@ -49,7 +49,7 @@ import sys
 from sys import platform
 
 DRIVER_NAME = "W5PL Driver for DL2MAN (tr)uSDX"   # based on trusdx-audio by SQ3SWF / PE1NNZ
-DRIVER_VERSION = "beta-2026-11-08 (reliable un-key, 8000 S/s TX, CAT parser, crash recovery)"
+DRIVER_VERSION = "beta-2026-11-08-2 (reliable un-key, 8000 S/s TX, CAT parser, crash recovery)"
 audio_tx_rate_trusdx = 4800
 audio_tx_rate = 8000   # fix: was 11520 (100% of the 115200 baud link). Measured: 13 s TX at 11520 left the trx stuck keyed; 8000 and 9600 un-keyed 6/6 in ~0.3 s
 audio_rx_rate = 7812
@@ -258,6 +258,11 @@ def start_tx(ser, pastream, why):
         ua_ts[0] = t0 = time.time()
         while time.time() - t0 < 1.0 and rx_seen_ts[0] < t0: time.sleep(0.02)
         log(f"I: UA before TX (trx was not streaming) -> streaming {'back' if rx_seen_ts[0] >= t0 else 'NOT back'}")
+        if rx_seen_ts[0] < t0:
+            # SAFETY: keying a trx that isn't in CAT streaming mode puts it in TX without audio mode; it then floods
+            # E; and can stay keyed (seen 2026-11-08 after a settings reset). Don't key it at all.
+            print(f"{datetime.datetime.utcnow()} WARNING: not keying the (tr)uSDX: it is not streaming audio (TX refused, {why})")
+            return
     ser.write(b"TX0;")   # only TX0 takes TX audio over the CAT stream (plain TX; makes the trx flood "E;")
     ser.flush()
     # give the trx a moment to switch to TX, then announce the audio stream with "US" (per the (tr)uSDX
@@ -327,6 +332,12 @@ def handle_cat(pastream, ser, cat):
             log(f"I: {d}")
             log(f"O: ID020; (emu)")
             return
+        if d.startswith(b"RX"):
+            # SAFETY: an un-key always goes to the trx, whatever the driver believes. A trx stuck in TX sends no RX
+            # audio, so it looks exactly like a crashed one; beta 2026-11-08 then held RX; back (stuck keyed).
+            log(f"I: {d}")
+            stop_tx(ser, pastream, "CAT")
+            return
         if (d == b'IF;' and not status[0] and not config['forward_if'] and b'IF' in reply_cache
                 and b'FA' in reply_cache and b'MD' in reply_cache):
             # fix: the trx crashed (reset in the middle of sending its IF reply) when its mode/filter was changed on
@@ -346,19 +357,18 @@ def handle_cat(pastream, ser, cat):
             key = d[:-1]
             if len(d) == 3 and key in reply_cache:
                 cat_write(cat, reply_cache[key]); log(f"I: {d} answered from cache (trx paused after repeated crashes)")
+            elif d.startswith(b"TX"):
+                print(f"{datetime.datetime.utcnow()} WARNING: not keying the (tr)uSDX: it is paused after repeated crashes")
             else:
                 log(f"I: {d} not sent (trx paused after repeated crashes)")
             return
-        if trx_silent() and ((len(d) == 3 and d[:-1] in reply_cache) or d.startswith(b"RX")):
+        if trx_silent() and len(d) == 3 and d[:-1] in reply_cache:
             # fix: when the trx crashed and is rebooting (seen when using its buttons/knobs while streaming), hamlib
             # kept polling and re-opening the rig, plus RX;/UA, and the trx crashed again during boot (boot loop until
             # WSJT-X gave up). While it is silent, answer polls from the last replies and keep the line quiet.
             if not trx_down_logged[0]:
                 trx_down_logged[0] = True
                 print(f"{datetime.datetime.utcnow()} WARNING: (tr)uSDX not responding (no RX audio) - answering CAT from cache until it is back")
-            if d.startswith(b"RX"):
-                log(f"I: {d} not sent (trx is in RX and not responding)")
-                return
             r = reply_cache[d[:-1]]
             if d[:-1] == b'IF' and len(r) >= 30: r = r[:28] + b'0' + r[29:]   # IF P8: 0 = receiving
             cat_write(cat, r)
@@ -386,6 +396,12 @@ def handle_cat(pastream, ser, cat):
                 if key == b'IF' and len(r) >= 30: r = r[:28] + b'1' + r[29:]   # IF P8: 1 = transmitting
                 cat_write(cat, r)
                 log(f"I: {d} answered from cache during TX: {r}")
+                return
+            if len(d) == 3:
+                # fix: hamlib re-opening the rig during TX sent KS; which broke the TX audio stream ("left TX audio
+                # mode"). A query the driver can't answer gets ?; (what the trx answers to unknown queries anyway).
+                cat_write(cat, b"?;")
+                log(f"I: {d} answered ?; during TX (keeps the TX audio stream intact)")
                 return
             tx_cat_delay(ser)
             ser.write(b";" + d + b"US")   # interrupt stream, send command, resume TX audio

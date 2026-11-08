@@ -16,7 +16,7 @@
  from sys import platform
  
 +DRIVER_NAME = "W5PL Driver for DL2MAN (tr)uSDX"   # based on trusdx-audio by SQ3SWF / PE1NNZ
-+DRIVER_VERSION = "beta-2026-11-08 (reliable un-key, 8000 S/s TX, CAT parser, crash recovery)"
++DRIVER_VERSION = "beta-2026-11-08-2 (reliable un-key, 8000 S/s TX, CAT parser, crash recovery)"
  audio_tx_rate_trusdx = 4800
 -audio_tx_rate = 11520  #11521
 +audio_tx_rate = 8000   # fix: was 11520 (100% of the 115200 baud link). Measured: 13 s TX at 11520 left the trx stuck keyed; 8000 and 9600 un-keyed 6/6 in ~0.3 s
@@ -206,7 +206,7 @@
  
  def tx_cat_delay(ser):
      #ser.reset_output_buffer() # because trusdx TX buffers can be full, empty host buffers (but reset_output_buffer does not seem to work)
-@@ -149,35 +246,76 @@
+@@ -149,35 +246,81 @@
      #time.sleep(0.0005 + 32/audio_tx_rate_trusdx) # and wait until trusdx buffers are read
      time.sleep(0.010) # and wait a bit before interrupting TX stream for a CAT cmd
  
@@ -223,6 +223,11 @@
 +        ua_ts[0] = t0 = time.time()
 +        while time.time() - t0 < 1.0 and rx_seen_ts[0] < t0: time.sleep(0.02)
 +        log(f"I: UA before TX (trx was not streaming) -> streaming {'back' if rx_seen_ts[0] >= t0 else 'NOT back'}")
++        if rx_seen_ts[0] < t0:
++            # SAFETY: keying a trx that isn't in CAT streaming mode puts it in TX without audio mode; it then floods
++            # E; and can stay keyed (seen 2026-11-08 after a settings reset). Don't key it at all.
++            print(f"{datetime.datetime.utcnow()} WARNING: not keying the (tr)uSDX: it is not streaming audio (TX refused, {why})")
++            return
 +    ser.write(b"TX0;")   # only TX0 takes TX audio over the CAT stream (plain TX; makes the trx flood "E;")
 +    ser.flush()
 +    # give the trx a moment to switch to TX, then announce the audio stream with "US" (per the (tr)uSDX
@@ -304,7 +309,7 @@
  def handle_cat(pastream, ser, cat):
      if(cat.inWaiting()):
          if not status[3]:
-@@ -185,51 +323,210 @@
+@@ -185,51 +328,221 @@
              log("CAT interface active")
          d = cat.read_until(b";")
          if True and d.startswith(b'ID'):   # this is a workaround for unrealistic fast RTT expectations in hamlib for sequence RX;ID;
@@ -317,6 +322,12 @@
 -            #log("***;")
 -            tx_cat_delay(ser)
 -            ser.write(b";")  # in TX mode, interrupt CAT stream by sending ; before issuing CAT cmd
++        if d.startswith(b"RX"):
++            # SAFETY: an un-key always goes to the trx, whatever the driver believes. A trx stuck in TX sends no RX
++            # audio, so it looks exactly like a crashed one; beta 2026-11-08 then held RX; back (stuck keyed).
++            log(f"I: {d}")
++            stop_tx(ser, pastream, "CAT")
++            return
 +        if (d == b'IF;' and not status[0] and not config['forward_if'] and b'IF' in reply_cache
 +                and b'FA' in reply_cache and b'MD' in reply_cache):
 +            # fix: the trx crashed (reset in the middle of sending its IF reply) when its mode/filter was changed on
@@ -336,19 +347,18 @@
 +            key = d[:-1]
 +            if len(d) == 3 and key in reply_cache:
 +                cat_write(cat, reply_cache[key]); log(f"I: {d} answered from cache (trx paused after repeated crashes)")
++            elif d.startswith(b"TX"):
++                print(f"{datetime.datetime.utcnow()} WARNING: not keying the (tr)uSDX: it is paused after repeated crashes")
 +            else:
 +                log(f"I: {d} not sent (trx paused after repeated crashes)")
 +            return
-+        if trx_silent() and ((len(d) == 3 and d[:-1] in reply_cache) or d.startswith(b"RX")):
++        if trx_silent() and len(d) == 3 and d[:-1] in reply_cache:
 +            # fix: when the trx crashed and is rebooting (seen when using its buttons/knobs while streaming), hamlib
 +            # kept polling and re-opening the rig, plus RX;/UA, and the trx crashed again during boot (boot loop until
 +            # WSJT-X gave up). While it is silent, answer polls from the last replies and keep the line quiet.
 +            if not trx_down_logged[0]:
 +                trx_down_logged[0] = True
 +                print(f"{datetime.datetime.utcnow()} WARNING: (tr)uSDX not responding (no RX audio) - answering CAT from cache until it is back")
-+            if d.startswith(b"RX"):
-+                log(f"I: {d} not sent (trx is in RX and not responding)")
-+                return
 +            r = reply_cache[d[:-1]]
 +            if d[:-1] == b'IF' and len(r) >= 30: r = r[:28] + b'0' + r[29:]   # IF P8: 0 = receiving
 +            cat_write(cat, r)
@@ -376,6 +386,12 @@
 +                if key == b'IF' and len(r) >= 30: r = r[:28] + b'1' + r[29:]   # IF P8: 1 = transmitting
 +                cat_write(cat, r)
 +                log(f"I: {d} answered from cache during TX: {r}")
++                return
++            if len(d) == 3:
++                # fix: hamlib re-opening the rig during TX sent KS; which broke the TX audio stream ("left TX audio
++                # mode"). A query the driver can't answer gets ?; (what the trx answers to unknown queries anyway).
++                cat_write(cat, b"?;")
++                log(f"I: {d} answered ?; during TX (keeps the TX audio stream intact)")
 +                return
 +            tx_cat_delay(ser)
 +            ser.write(b";" + d + b"US")   # interrupt stream, send command, resume TX audio
@@ -539,7 +555,7 @@
  def pty_echo(fd1, fd2):
      try:
          log("pty_echo")
-@@ -244,6 +541,11 @@
+@@ -244,6 +557,11 @@
  
  # https://stackoverflow.com/questions/7088672/pyaudio-working-but-spits-out-error-messages-each-time
  def run():
@@ -551,7 +567,7 @@
      try:
          status[0] = False
          status[1] = False
-@@ -282,7 +584,8 @@
+@@ -282,7 +600,8 @@
              print("Serial device = ", find_serial_device(trusdx_serial_dev) )
              print("Serial loopback = ", find_serial_device(loopback_serial_dev) )
          
@@ -561,7 +577,7 @@
              if find_serial_device(loopback_serial_dev):
                  print(f"Conflict on COM port {loopback_serial_dev}: Go to Device Manager, select CH340 device and change in advanced settings COM port other than 8 or 9.")
                  time.sleep(1)
-@@ -290,7 +593,11 @@
+@@ -290,7 +609,11 @@
                  print(f"Conflict on COM port {cat_serial_dev}: Go to Device Manager, select CH340 device and change in advanced settings COM port other than 8 or 9.")
                  time.sleep(1)
  
@@ -574,7 +590,7 @@
             _master1, slave1 = os.openpty()  # make a tty <-> tty device where one end is opened as serial device, other end by CAT app
             _master2, slave2 = os.openpty()
             master1 = os.fdopen(_master1, 'rb+', 0)
-@@ -298,33 +605,42 @@
+@@ -298,33 +621,42 @@
             threading.Thread(target=pty_echo, args=(master1,master2)).start()
             threading.Thread(target=pty_echo, args=(master2,master1)).start()
             cat_serial_dev = os.ttyname(slave1)
@@ -629,7 +645,7 @@
              raise
              
          #ser.dtr = True
-@@ -333,9 +649,10 @@
+@@ -333,9 +665,10 @@
          ser.write(b";MD2;UA2;" if not config['unmute'] else b";MD2;UA1;") # enable audio streaming, mute trusdx
          #status[1] = True
  
@@ -643,7 +659,7 @@
  
          print(f"(tr)uSDX driver OK! Available devices = [{virtual_audio_dev_in}, {virtual_audio_dev_out}, {cat_serial_dev}]" )
          #ts = time.time()
-@@ -349,13 +666,21 @@
+@@ -349,13 +682,21 @@
      except KeyboardInterrupt:
          print("Stopping")
          status[2] = False
@@ -667,7 +683,7 @@
             #master1.close()
             #master2.close()
             #os.close(_master1)           
-@@ -365,31 +690,59 @@
+@@ -365,31 +706,59 @@
             log("fd closed")
          ser2.close()
          ser.close()
