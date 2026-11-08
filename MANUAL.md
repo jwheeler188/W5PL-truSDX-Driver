@@ -489,8 +489,11 @@ What the driver does to make that reliable:
   crash by itself. 2.00x also has no setting to turn off its CW decoder or to lock the mode.
 - **After a crash, check the radio's settings before transmitting.** A crash while the radio saves a mode or filter
   change can reset settings: in testing, TX Drive changed from 0 to 8 (so a "0 W" test would no longer be 0 W) and
-  the mode came back as CW. Check **TX Drive**, **Semi QSK (OFF)**, **PA Bias**, **Ref freq** and **LPF Config**
-  against your notes. Write down your calibration values (Ref freq, PA Bias, TX Drive) now, while they're right.
+  the mode came back as CW, and the stored CQ/CW messages were garbled, i.e. the radio's saved settings were
+  corrupted. Check **TX Drive**, **Semi QSK (OFF)**, **PA Bias**, **Ref freq**, **LPF Config** and the CQ messages
+  against your notes. If anything is garbled, use the radio's **Reset settings..** menu item and re-enter your values
+  (don't transmit with power until PA Bias is right). Write down your calibration values (Ref freq, PA Bias, LPF
+  Config, TX Drive) now, while they're right.
 - **Linux** hasn't been tested with this release yet.
 - Receive audio is **8-bit at 7812 samples/s** (a limit of the radio's USB streaming): audio above about 3.9 kHz doesn't
   exist, and the dynamic range depends on the volume setting (section 8). FT8/FT4/JS8 work well within that.
