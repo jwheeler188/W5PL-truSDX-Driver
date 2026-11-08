@@ -1,6 +1,6 @@
 # W5PL Driver for DL2MAN (tr)uSDX — User Manual
 
-**Version:** beta 2026-11-07 · **Platforms:** macOS, Windows (Intel/AMD and ARM64), Linux (untested)
+**Version:** beta 2026-11-08 · **Platforms:** macOS, Windows (Intel/AMD and ARM64), Linux (untested)
 **Based on:** [trusdx-audio](https://github.com/threeme3/trusdx-audio) by SQ3SWF and PE1NNZ
 
 ---
@@ -82,7 +82,14 @@ You need:
 | Menu 2.4 **Semi-QSK** | **OFF** | Semi-QSK switches back to RX on its own during digital transmissions |
 | **VOX** | **OFF** | Let WSJT-X key the radio by CAT |
 | **Volume** | **10–12** | Sets the receive audio level sent to WSJT-X. See section 8 |
-| Mode | **USB** | Set it on the radio: with WSJT-X *Mode: None* (section 5), WSJT-X leaves the mode alone |
+| Mode | **USB** | WSJT-X sets and keeps it with *Mode: USB* (section 5) |
+| **Filter** | **3 kHz** (or full) | FT8 signals use 200–3000 Hz |
+| **TX Drive** | your usual setting | Fine-tune power with WSJT-X's Pwr slider |
+
+> **Set the filter, volume and TX Drive on the radio before you start WSJT-X, then leave the radio's controls alone
+> while WSJT-X is connected.** On firmware 2.00x, pressing the radio's buttons or turning its knobs while CAT audio
+> streams and WSJT-X polls can crash the radio (it reboots). See [section 17](#17-known-limitations). Power and filter
+> width can't be set over CAT on this firmware; frequency and mode can, and WSJT-X does that safely.
 
 The driver turns the radio's speaker off while it runs (use `--unmute` to keep it on).
 
@@ -198,11 +205,17 @@ Start the driver first and wait for `(tr)uSDX driver OK!`, then start WSJT-X.
 | **Serial Port** | **`COM8`** | **`127.0.0.1:4542`** | **`/tmp/trusdx`** (type it in) | **`/tmp/trusdx`** (type it in) |
 | Baud Rate | 115200 | 115200 | 115200 | 115200 |
 | Data Bits / Stop Bits / Handshake | Default | Default | Default | Default |
-| Poll Interval | 1–80 s (any) | same | same | same |
+| Poll Interval | **2–5 s** (any works) | same | same | same |
 | **PTT Method** | **CAT** (RTS/DTR also works) | **CAT** | **CAT** | **CAT** (or VOX) |
-| **Mode** | **None** | None | None | None |
+| **Mode** | **USB** | USB | USB | USB |
 | Split Operation | None | None | None | None |
 | Transmit Audio Source | either | either | either | either |
+
+**Poll Interval:** any value works with this driver. On firmware 2.00x, a few seconds (2–5 s) means less CAT traffic
+while you operate, which seemed to make the front-panel crash (section 17) less likely.
+
+**Mode: USB** makes WSJT-X put the radio in USB by CAT (safe), including if it was left in another mode. *None* also
+works, but then the radio must already be in USB.
 
 **Which rig model?**
 - **`DL2MAN (tr)uSDX`** is listed in newer WSJT-X versions with a recent Hamlib (tested: WSJT-X v3.3.0-beta5,
@@ -249,11 +262,19 @@ If the radio stays keyed at any point: **switch the radio off**, then follow sec
 1. Connect the radio by USB and switch it on.
 2. Start the driver (Start menu on Windows; `Start W5PL truSDX Driver.command` on macOS; `./trusdx.sh` on Linux).
 3. Wait for `(tr)uSDX driver OK!`, then start WSJT-X.
-4. When you're done, close WSJT-X, then close the driver window.
+4. Operate from WSJT-X. **Don't use the radio's buttons or knobs while WSJT-X is connected** (section 17). To change
+   something on the radio, close WSJT-X first (the driver can keep running), change it, then start WSJT-X again.
+5. When you're done, close WSJT-X, then close the driver window.
 
 **Unplugging or switching off the radio** while the driver runs is fine: the driver shows `truSDX device not found`
 until the radio is back, then reconnects by itself. WSJT-X may show a rig error during that time; click **Retry**, or
 **Test CAT** in Settings, once the driver shows OK again.
+
+**If the radio crashes and reboots** (usually after its controls were used while WSJT-X was connected), the driver
+shows `(tr)uSDX not responding` and keeps WSJT-X connected with the last known frequency and mode. It gives the radio
+quiet time to boot, then restarts streaming and shows `(tr)uSDX responding again`. If it crashes 3 times within a
+minute (typically because it was left in CW), the driver pauses all traffic to it for 60 s and says so: switch the
+radio back to USB (power-cycle it if it's frozen) and it carries on.
 
 When the driver stops or restarts while transmitting (Ctrl+C, a radio reconnect), it un-keys the radio first. Closing
 the window may end it too abruptly for that, so stop transmitting in WSJT-X before closing the driver.
@@ -300,6 +321,7 @@ run the `.exe` from a command prompt).
 | `--no-rtsdtr` | (Windows) Ignore RTS/DTR on COM8 as PTT. |
 | `--vox` | (Linux) Key the radio when transmit audio arrives (VOX PTT). |
 | `--tx-rate N` | Transmit audio sample rate sent to the radio (default **8000**). Don't use 11520: it overflows the radio on long transmissions and leaves it stuck keyed. |
+| `--forward-if` | Send WSJT-X's `IF;` polls to the radio instead of answering them from its `FA;`/`MD;` replies (the default since beta 2026-11-08; section 16). |
 | `-B N`, `--block-size N` | Receive audio block size (default 512). |
 | `-T N`, `--tx-block-size N` | Serial read block size (default 48). |
 | `--rawlog FILE` | Debugging: record the raw data from the radio to a file. |
@@ -341,6 +363,12 @@ Instead of a virtual serial port, the driver can accept CAT on a local network p
 | `WARNING: (tr)uSDX left TX audio mode` | The radio left audio mode during a transmission; the driver pauses transmit audio so the un-key gets through. Please report it with a `-v` log. |
 | macOS: "cannot be opened because it is from an unidentified developer" | Right-click the `.command` file → Open → Open. |
 | Windows: SmartScreen blocks the installer | More info → Run anyway. The installer is unsigned. |
+| **Radio reboots** (display restarts) when you press a button or turn a knob | Firmware 2.00x crashes when its controls are used while CAT audio streams and WSJT-X polls (section 17). The driver recovers by itself. Set filter/volume/TX Drive before starting WSJT-X and leave the controls alone while it's connected. |
+| `(tr)uSDX not responding` … `responding again` | The radio crashed and rebooted; the driver kept WSJT-X connected and restarted streaming. No action needed. |
+| `crashed 3 times in a minute. Pausing all CAT traffic` | The radio keeps crashing, usually because it's in **CW** mode. Switch it back to **USB** (power-cycle it if it's frozen); the driver retries after 60 s. |
+| Radio **frozen** (display stuck, no reboot) | Power-cycle it. Nothing over USB can wake a hung radio. |
+| Windows: driver won't start, "VB-CABLE denied" / audio device errors | Windows made VB-CABLE its **default** sound device. Control Panel → Sound: set the computer's own speakers (Playback) and microphone (Recording) as default, then restart the driver. Select CABLE only inside WSJT-X. |
+| CAT drops out, or noise, only when the **12 V supply** is connected | Supply noise or a ground loop. A clip-on ferrite on the USB and power cables helps, as does a cleaner supply. |
 | `||PaMacCore (AUHAL)|| Error … -10863` at macOS start | Harmless message from the audio library; ignore it. |
 
 ---
@@ -411,6 +439,19 @@ For the technically curious. The radio's CAT streaming protocol (DL2MAN):
 - `TX0;` followed by `US` keys the radio and starts transmit audio, which the driver streams as 8-bit samples.
 - `RX;` un-keys it.
 
+CAT commands the (tr)uSDX answers on 2.00x (from DL2MAN's documentation and tested on the radio):
+
+| Command | Meaning |
+|---|---|
+| `FA;` / `FAnnnnnnnnnnn;` | read / set frequency (Hz) |
+| `MD;` / `MDn;` | read / set mode: 1 LSB, 2 USB, 3 CW, 4 FM, 5 AM |
+| `IF;` | status: frequency and mode |
+| `TX0;` / `TX2;` / `RX;` | transmit / tune (CW mode) / receive |
+| `ID;` | 020 (TS-480) |
+| `UA0;` `UA1;` `UA2;` / `US…` | audio streaming off / on with speaker / on, speaker muted; audio data |
+| `PS;` `AI;` `FW;` `FL;` `AG0;` | fixed compatibility answers (`FW;` always says 4000) |
+| `PC` `SH` `SL` `AG` `SM` `VX` `NB` … | not supported (`?;`): **power and filter width can't be set over CAT** |
+
 What the driver does to make that reliable:
 
 - **Transmit audio rate:** 8000 samples/s, sent in even 20 ms pieces. The factory 11520 samples/s used 100% of the
@@ -425,12 +466,23 @@ What the driver does to make that reliable:
 - **Receive audio:** played as signed 8-bit, so gaps are silence rather than full-scale; an elastic buffer absorbs the
   ~0.15% rate difference caused by CAT polls.
 - **Reconnects:** each connection has its own generation of threads, so threads from before a reconnect stop.
-- **Watchdog:** if no receive audio arrives for 1.5 s, streaming is switched on again.
+- **Watchdog:** if no receive audio arrives for 1.5 s, streaming is switched on again, backing off (1, 2, 4, 8 s) and,
+  after the first try, only once the radio has been quiet for 5 s, so a rebooting radio isn't hit during startup.
+- **Crash recovery:** while the radio isn't streaming, WSJT-X's polls are answered from the last replies and nothing is
+  sent to the radio; 3 crashes within a minute pause all traffic for 60 s (boot-loop breaker).
+- **`IF;` polls** are answered by the driver from the radio's own `FA;` and `MD;` replies (the result is byte-identical),
+  so the radio never sends its long `IF` reply; every observed crash happened during that reply.
 
 ---
 
 ## 17. Known limitations
 
+- **Firmware 2.00x crashes when its front panel is used while CAT audio streams and a program polls it.** Tested
+  2026-11-07: a mode tap, filter double-tap or volume-knob turn with WSJT-X connected made the radio reboot (and it
+  reboots again while left in CW). The same presses with streaming but no CAT polls, or with nothing connected, were
+  fine, and mode changes made over CAT (including CW, 90 s with 525 polls) were fine too. So: set the radio up first,
+  change mode from WSJT-X, and don't touch the radio's controls while WSJT-X is connected. The driver recovers from a
+  crash by itself. 2.00x also has no setting to turn off its CW decoder or to lock the mode.
 - **Linux** hasn't been tested with this release yet.
 - Receive audio is **8-bit at 7812 samples/s** (a limit of the radio's USB streaming): audio above about 3.9 kHz doesn't
   exist, and the dynamic range depends on the volume setting (section 8). FT8/FT4/JS8 work well within that.

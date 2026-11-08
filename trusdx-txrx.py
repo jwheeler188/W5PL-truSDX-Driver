@@ -49,7 +49,7 @@ import sys
 from sys import platform
 
 DRIVER_NAME = "W5PL Driver for DL2MAN (tr)uSDX"   # based on trusdx-audio by SQ3SWF / PE1NNZ
-DRIVER_VERSION = "beta-2026-11-07 (macOS/Windows fixes: reliable un-key, 8000 S/s TX, CAT parser)"
+DRIVER_VERSION = "beta-2026-11-08 (reliable un-key, 8000 S/s TX, CAT parser, crash recovery)"
 audio_tx_rate_trusdx = 4800
 audio_tx_rate = 8000   # fix: was 11520 (100% of the 115200 baud link). Measured: 13 s TX at 11520 left the trx stuck keyed; 8000 and 9600 un-keyed 6/6 in ~0.3 s
 audio_rx_rate = 7812
@@ -62,6 +62,14 @@ urs = [0]   # underrun counter
 STATS = {'raw': 0, 'audio': 0, 'played': 0, 'urs': 0, 'ts': 0.0}  # -v: RX audio statistics, logged every 5 s
 unkey_ts = [0.0]  # time of last un-key safety repeat
 ua_ts = [0.0]     # last time the streaming watchdog re-sent UA
+ua_gap = [1.0]    # watchdog interval: doubles (to 8 s) while the trx stays silent, so a rebooting trx gets quiet time
+trx_down_logged = [False]  # 'trx not responding' logged for the current outage
+audio_streak_ts = [0.0]    # start of the current unbroken run of RX audio (a rebooting trx sends only short bursts)
+rx_any_ts = [0.0]          # last time ANY byte came from the trx (audio, CAT reply or boot burst)
+ua_tries = [0]             # watchdog UA attempts in the current outage
+outage = [False]           # trx stopped streaming in RX and has not streamed steadily since
+outage_times = []          # start times of recent outages (boot-loop detection)
+pause_until = [0.0]        # boot-loop breaker: no traffic to the trx until this time
 t_unkey = [0.0]   # time the last un-key sequence finished
 second_unkey_at = [0]  # when to send the 2nd RX+UA after an un-key (0 = none pending)
 start_ts = [time.time()]  # driver start, the watchdog waits a few seconds after startup
@@ -107,9 +115,14 @@ def cat_write(cat, data):
     except serial.SerialTimeoutException:
         log(f"CAT app not reading - dropped {data!r}")
 
+def mark_audio():
+    now = time.time()
+    if now - rx_seen_ts[0] > 0.3: audio_streak_ts[0] = now   # audio (re)started after a gap
+    rx_seen_ts[0] = now
+
 def handle_rx_audio(ser, cat, pastream, d):
     if status[1]:
-        rx_seen_ts[0] = time.time()
+        mark_audio()
         #log(f"stream: {d}")
         if not status[0]: buf.append(d); STATS['audio'] += len(d)   # in CAT streaming mode: fwd to audio buf
         #if not status[0]: pastream.write(d)  #  in CAT streaming mode: directly fwd to audio
@@ -120,7 +133,7 @@ def handle_rx_audio(ser, cat, pastream, d):
         if d.startswith(b'US'):
             #log("***US mode")
             status[1] = True            # go to CAT stream mode when data starts with US
-            rx_seen_ts[0] = time.time()
+            mark_audio()
             # fix: a short stream segment can arrive whole ("US<audio>;"); its ';' already ends the stream.
             # Without this the next CAT reply was swallowed as audio, so hamlib timed out and retried.
             if len(d) > 2:
@@ -131,7 +144,7 @@ def handle_rx_audio(ser, cat, pastream, d):
             # start with A-Z or '?'; anything else is audio, so don't forward it to the CAT app (it caused
             # hamlib "Protocol error") - treat it as stream data instead.
             status[1] = True
-            rx_seen_ts[0] = time.time()
+            mark_audio()
             if not status[0]: buf.append(d); STATS['audio'] += len(d)
             if d[-1] == ord(';'): status[1] = False
         elif d == b'E;' and (status[0] or time.time() - unkey_ts[0] < 2.0):
@@ -145,7 +158,8 @@ def handle_rx_audio(ser, cat, pastream, d):
         elif d == b'?;' and (time.time() - unkey_ts[0] < 2.0 or time.time() - ua_ts[0] < 0.5):
             log("Dropped '?;' caused by un-key safety repeat")
         else:
-            if len(d) > 3 and 65 <= d[0] <= 90 and 65 <= d[1] <= 90 and not status[0]:
+            if (len(d) > 3 and 65 <= d[0] <= 90 and 65 <= d[1] <= 90 and not status[0]
+                    and all(48 <= c <= 90 or c in b' +-;' for c in d) and d.count(b';') == 1):   # well-formed only
                 reply_cache[d[:2]] = d  # remember last reply per command, used to answer polls during TX
             if status[3]:               # only send something to cat port, when active
                 cat_write(cat, d)
@@ -172,6 +186,7 @@ def receive_serial_audio(ser, cat, pastream, gen=None):
             else:
                 #d = bbuf + ser.read(config['tx_block_size'])
                 raw = ser.read(ser.in_waiting)
+                if raw: rx_any_ts[0] = time.time()
                 STATS['raw'] += len(raw)
                 if config['verbose'] and time.time() - STATS['ts'] >= 5:
                     dt = time.time() - STATS['ts'] if STATS['ts'] else 0
@@ -293,6 +308,14 @@ def handle_rts_dtr(ser, cat, pastream=None):
         status[4] = False
         stop_tx(ser, pastream, "RTS/DTR")
 
+def trx_silent(now=None):
+    """In RX the trx streams audio continuously; if none has arrived for 1.5 s it is not responding (rebooting
+    after a crash, e.g. when its buttons/knobs are used while streaming, or busy). Not during TX or right after it."""
+    now = now or time.time()
+    if status[0] or now - unkey_ts[0] <= 2.0 or now - start_ts[0] <= 5.0: return False
+    if now - rx_seen_ts[0] > 1.5: return True
+    return outage[0] and now - audio_streak_ts[0] < 1.0   # boot bursts don't count as 'back'
+
 def handle_cat(pastream, ser, cat):
     if(cat.inWaiting()):
         if not status[3]:
@@ -303,6 +326,43 @@ def handle_cat(pastream, ser, cat):
             cat_write(cat, b'ID020;')
             log(f"I: {d}")
             log(f"O: ID020; (emu)")
+            return
+        if (d == b'IF;' and not status[0] and not config['forward_if'] and b'IF' in reply_cache
+                and b'FA' in reply_cache and b'MD' in reply_cache):
+            # fix: the trx crashed (reset in the middle of sending its IF reply) when its mode/filter was changed on
+            # the front panel while CAT audio was streaming and hamlib was polling (2.00x, 2026-11-07; streaming
+            # alone, or polling with the buttons left alone, was fine). Hamlib polls IF, FA and MD every second; build
+            # the IF reply here from the trx's last real IF, FA (frequency) and MD (mode) replies, so the trx never
+            # has to send its long IF reply. Frequency and mode stay current through hamlib's own FA/MD polls.
+            r = bytearray(reply_cache[b'IF'])
+            fa = reply_cache[b'FA']; md = reply_cache[b'MD']
+            if len(r) == 38 and len(fa) == 14 and len(md) == 4:
+                r[2:13] = fa[2:13]; r[29:30] = md[2:3]; r[28:29] = b'0'   # frequency, mode, P8: 0 = receiving
+                cat_write(cat, bytes(r))
+                log(f"I: {d} answered by the driver from FA/MD: {bytes(r)}")
+                return
+        if time.time() < pause_until[0] and not status[0]:
+            # boot-loop breaker active: keep the line completely quiet; answer what we can from the last replies
+            key = d[:-1]
+            if len(d) == 3 and key in reply_cache:
+                cat_write(cat, reply_cache[key]); log(f"I: {d} answered from cache (trx paused after repeated crashes)")
+            else:
+                log(f"I: {d} not sent (trx paused after repeated crashes)")
+            return
+        if trx_silent() and ((len(d) == 3 and d[:-1] in reply_cache) or d.startswith(b"RX")):
+            # fix: when the trx crashed and is rebooting (seen when using its buttons/knobs while streaming), hamlib
+            # kept polling and re-opening the rig, plus RX;/UA, and the trx crashed again during boot (boot loop until
+            # WSJT-X gave up). While it is silent, answer polls from the last replies and keep the line quiet.
+            if not trx_down_logged[0]:
+                trx_down_logged[0] = True
+                print(f"{datetime.datetime.utcnow()} WARNING: (tr)uSDX not responding (no RX audio) - answering CAT from cache until it is back")
+            if d.startswith(b"RX"):
+                log(f"I: {d} not sent (trx is in RX and not responding)")
+                return
+            r = reply_cache[d[:-1]]
+            if d[:-1] == b'IF' and len(r) >= 30: r = r[:28] + b'0' + r[29:]   # IF P8: 0 = receiving
+            cat_write(cat, r)
+            log(f"I: {d} answered from cache (trx not responding): {r}")
             return
         if not status[0] and time.time() - unkey_ts[0] < 1.0 and len(d) == 3 and d[:-1] in reply_cache:
             # fix: right after RX the trx is busy for ~1-2 s and does not answer; hamlib's PTT check (IF;)
@@ -367,12 +427,30 @@ def transmit_audio_via_serial(pastream, ser, cat, gen=None):
                     ser.flush()
                     unkey_ts[0] = time.time()   # extends cache answers / stray-reply filter while it settles
                     log("I: ;RX; + UA (2nd un-key sequence)")
-            if (not status[0] and now - rx_seen_ts[0] > 1.5 and now - unkey_ts[0] > 2.0
-                    and now - ua_ts[0] > 1.0 and now - start_ts[0] > 5.0):
+            # fix: a trx that crashed (front-panel input while streaming) reboots in ~4 s; a UA during its startup
+            # crashed it again (boot loop every ~6 s, seen 2026-11-07). After the first try, only re-send UA once the
+            # trx has been completely quiet for 5 s, i.e. has finished booting.
+            if trx_silent(now) and not outage[0]:
+                outage_times[:] = [t for t in outage_times if now - t < 60] + [now]
+                if len(outage_times) >= 3 and now >= pause_until[0]:
+                    # fix: 2.00x crashes when CAT commands arrive while it streams and its mode/filter is changed, and
+                    # reliably in CW mode; saved in CW it crashed again on every boot. Stop all traffic so it can settle.
+                    pause_until[0] = now + 60; outage_times.clear()
+                    print(f"{datetime.datetime.utcnow()} WARNING: the (tr)uSDX crashed 3 times in a minute. Pausing all CAT traffic to it for 60 s.\n"
+                          "    Firmware 2.00x crashes when its mode/filter is changed (especially to CW) while CAT audio streams.\n"
+                          "    Switch the radio back to USB (power-cycle it if it is frozen); the driver retries in 60 s.")
+            if now < pause_until[0]:
+                ua_tries[0] = 0; ua_gap[0] = 1.0; outage[0] = True   # one fresh attempt when the pause ends
+            elif trx_silent(now) and now - ua_ts[0] > ua_gap[0] and (ua_tries[0] == 0 or now - rx_any_ts[0] > 5.0):
+                ua_tries[0] += 1; outage[0] = True
                 ua_ts[0] = now
                 ser.write(ua_cmd())
                 ser.flush()
-                log("I: UA2; (streaming watchdog: no RX audio for 1.5 s)")
+                log(f"I: UA2; (streaming watchdog: no RX audio for {now - rx_seen_ts[0]:.1f} s, next try in {min(ua_gap[0] * 2, 8.0):.0f} s)")
+                ua_gap[0] = min(ua_gap[0] * 2, 8.0)   # back off: a rebooting trx needs quiet time
+            elif outage[0] and not trx_silent(now):
+                if trx_down_logged[0]: print(f"{datetime.datetime.utcnow()} (tr)uSDX responding again")
+                ua_gap[0] = 1.0; trx_down_logged[0] = False; ua_tries[0] = 0; outage[0] = False
             if (status[0] or config['vox']) and pastream.get_read_available() > 0:    # in TX mode, and audio available
                 samples = pastream.read(audio_tx_rate // 50, exception_on_overflow = False)   # fix: 20 ms pieces, evenly spaced (was 512-sample bursts)
                 arr = array.array('h', samples)
@@ -653,6 +731,7 @@ if __name__ == '__main__':
     parser.add_argument("-B", "--block-size", type=int, default=512, help="RX Block size")
     parser.add_argument("-T", "--tx-block-size", type=int, default=48, help="TX Block size")
     parser.add_argument("--tx-rate", type=int, default=8000, help="TX audio sample rate sent to the trx (11520 overflows it on long TX)")
+    parser.add_argument("--forward-if", action="store_true", default=False, help="send IF; polls to the trx instead of answering them from its FA/MD replies")
     parser.add_argument("--rawlog", default=os.environ.get('TRUSDX_RAWLOG', ''), help="debug: file to record raw data from the trx")
     args = parser.parse_args()
     config = vars(args)

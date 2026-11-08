@@ -1,4 +1,25 @@
-# Changes in beta 2026-11-07 (vs. original trusdx-txrx.py)
+# Changes
+
+## beta 2026-11-08
+
+Found while testing on firmware 2.00x: **using the radio's front panel (mode tap, filter double-tap, volume knob) while
+CAT audio streams and WSJT-X polls crashes the radio**, which reboots in ~4 s. The driver then kept it in a **boot loop**
+(WSJT-X re-polling and reconnecting, plus the driver's streaming watchdog). The crash itself is a firmware bug: the same
+presses with streaming but no CAT polls, or with no computer at all, were fine; mode changes made by CAT (including
+90 s in CW with 525 polls) were fine too. The driver now recovers instead of looping:
+
+| # | Problem | Fix |
+|---|---|---|
+| 26 | After a crash, WSJT-X kept polling and re-opening the rig, `RX;`/`UA2;` followed, and the radio crashed again while booting (loop every ~6 s, until WSJT-X gave up). | **Quiet mode:** when the radio stops streaming in RX (1.5 s without audio), the driver answers WSJT-X's polls from the last replies and sends nothing to the radio. WSJT-X stays connected. Messages: `(tr)uSDX not responding` / `responding again`. |
+| 27 | The streaming watchdog re-sent `UA2;` every second, and a `UA2;` during the radio's startup crashed it again. | Watchdog **backs off** (1, 2, 4, 8 s), and after the first try only re-enables streaming once the radio has been **completely quiet for 5 s** (finished booting). The short burst a rebooting radio sends no longer counts as "back": audio must stream steadily for 1 s. |
+| 28 | Radio saved in CW kept crashing on every boot. | **Boot-loop breaker:** 3 crashes within 60 s → all traffic to the radio (polls, streaming, transmit) pauses for 60 s with instructions (switch back to USB, power-cycle if frozen), then one fresh attempt. |
+| 29 | A reply cut off by the radio's reset (binary garbage inside an `IF` reply) was cached and served to WSJT-X. | Only well-formed replies are cached. |
+| 30 | Every crash happened while the radio sent its long `IF;` reply. | `IF;` polls are answered by the driver from the radio's own `FA;` (frequency) and `MD;` (mode) replies (byte-identical to the radio's reply), cutting CAT traffic to the radio by a third. `--forward-if` restores the old behaviour. |
+
+**Workaround until the firmware is fixed:** set filter, volume and TX Drive on the radio *before* starting WSJT-X, set
+WSJT-X **Mode: USB**, and don't use the radio's controls while WSJT-X is connected (see the manual, section 17).
+
+## beta 2026-11-07 (vs. original trusdx-txrx.py)
 
 All of these were found from driver logs plus raw serial captures, and checked with a direct test that talks
 to the radio without the driver (`tools/unkey_test.py`). Test setup: (tr)uSDX firmware 2.00x, macOS 13,

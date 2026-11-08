@@ -28,7 +28,7 @@ Download from the [Releases](../../releases) page.
    - **Linux:** run `linux/install.sh`, then log out and back in once.
 3. **Start the driver** and wait for `(tr)uSDX driver OK!`.
    Windows: Start menu → *W5PL Driver for DL2MAN (tr)uSDX*. macOS: `macOS/Start W5PL truSDX Driver.command`. Linux: `linux/trusdx.sh`.
-4. **WSJT-X → Settings → Radio:** Rig **DL2MAN (tr)uSDX** (or **Kenwood TS-480**), 115200 baud, PTT **CAT**, Mode **None**.
+4. **WSJT-X → Settings → Radio:** Rig **DL2MAN (tr)uSDX** (or **Kenwood TS-480**), 115200 baud, PTT **CAT**, Mode **USB**.
 
    | | Windows x64 | Windows ARM64 | macOS | Linux |
    |---|---|---|---|---|
@@ -37,6 +37,10 @@ Download from the [Releases](../../releases) page.
    | Audio Output | CABLE Input | CABLE Input | BlackHole 2ch | TRUSDX |
 
 5. Click **Test CAT** (green), then do the [0 W test](MANUAL.md#6-first-test-0-w).
+
+> **Firmware 2.00x:** set filter, volume and TX Drive on the radio *before* starting WSJT-X, and don't use the
+> radio's controls while WSJT-X is connected: that can crash the radio. The driver recovers, but avoid it
+> ([manual, section 17](MANUAL.md#17-known-limitations)).
 
 ## Documentation
 
@@ -53,6 +57,8 @@ Download from the [Releases](../../releases) page.
 - **Slow, retried CAT** commands and Hamlib *protocol error* / *timeout* messages.
 - Receive audio input **jumping to 100%**, and short **receive-audio gaps**.
 - Problems after **unplugging and reconnecting** the radio.
+- **Crash recovery:** if the radio crashes (firmware 2.00x, front-panel use while streaming), the driver keeps WSJT-X
+  connected and lets the radio reboot cleanly instead of keeping it in a reboot loop.
 - New: **macOS** installer, **Windows on ARM** edition, **network CAT** (`--cat-tcp`), uninstallers, this manual.
 
 ## Repository layout

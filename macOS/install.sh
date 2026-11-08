@@ -1,5 +1,5 @@
 #!/bin/zsh
-# W5PL Driver for DL2MAN (tr)uSDX - macOS installer (beta 2026-11-07)
+# W5PL Driver for DL2MAN (tr)uSDX - macOS installer (beta 2026-11-08)
 # Installs PortAudio (Homebrew), checks BlackHole 2ch, and builds a private Python environment
 # with pyaudio + pyserial in this folder (.venv). Changes nothing else on the Mac. Safe to run again.
 # Remove everything again with: ./uninstall.sh

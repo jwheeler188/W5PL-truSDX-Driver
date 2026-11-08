@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# W5PL Driver for DL2MAN (tr)uSDX - Linux installer (beta 2026-11-07, UNTESTED on Linux - please report results)
+# W5PL Driver for DL2MAN (tr)uSDX - Linux installer (beta 2026-11-08, UNTESTED on Linux - please report results)
 # Installs Python 3 + pyaudio + pyserial and pactl from your distribution, gives you access to the radio's serial
 # port, and offers to remove brltty (which grabs CH340 USB-serial radios on Ubuntu/Debian). Safe to run again.
 # Supports apt (Debian/Ubuntu/Mint/Raspberry Pi OS), dnf (Fedora), pacman (Arch/Manjaro), zypper (openSUSE).
