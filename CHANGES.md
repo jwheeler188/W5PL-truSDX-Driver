@@ -1,5 +1,11 @@
 # Changes
 
+## Next (unreleased)
+
+| # | Change |
+|---|---|
+| 39 | New option **`--rts-low`**: DTR high, RTS low on the radio's port, per DL2MAN's CAT spec ("RTS should be LOW on RX, may be HIGH to key CW/PTT"). The default stays pyserial's (both high). Tested on air 2026-11-08 (macOS): RX, CAT, Auto Seq QSO and un-keys normal. |
+
 ## beta 2026-11-08-3 (clean transmit audio)
 
 Reported by G4BWQ (issue #1): transmit audio was a low "warble" with little power. Confirmed on a second receiver: the

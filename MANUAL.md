@@ -382,6 +382,7 @@ run the `.exe` from a command prompt).
 | `--vox` | (Linux) Key the radio when transmit audio arrives (VOX PTT). |
 | `--tx-rate N` | Transmit audio sample rate sent to the radio (default **10473**, what the link carries with 2 stop bits). |
 | `--stop-bits 1\|2` | Serial stop bits to the radio (default **2**: the link spaces the transmit audio evenly). `1` is the factory setting, for comparison only: with 1 stop bit, 11520 S/s fills the link and can leave the radio stuck keyed or rebooting, and lower rates sound garbled. |
+| `--rts-low` | Hold **RTS low** (and DTR high) on the radio's USB port, as DL2MAN's CAT spec describes. Default: both lines high, which has always worked. Tested 2026-11-08: no difference in operation. |
 | `--forward-if` | Send WSJT-X's `IF;` polls to the radio instead of answering them from its `FA;`/`MD;` replies (the default since beta 2026-11-08; section 16). |
 | `-B N`, `--block-size N` | Receive audio block size (default 512). |
 | `-T N`, `--tx-block-size N` | Serial read block size (default 48). |

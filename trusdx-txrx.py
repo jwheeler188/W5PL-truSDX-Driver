@@ -668,8 +668,14 @@ def run():
         try:
             # fix: was write_timeout=0 (non-blocking): during TX the link is full of audio, so pieces of the
             # audio, ';', 'US' and even 'RX;' were silently dropped -> E; floods and a trx stuck in TX.
-            ser = serial.Serial(find_serial_device(trusdx_serial_dev), 115200, write_timeout = 2,
+            ser = serial.Serial(None, 115200, write_timeout = 2,
                                 stopbits = serial.STOPBITS_TWO if config['stop_bits'] == 2 else serial.STOPBITS_ONE)
+            ser.port = find_serial_device(trusdx_serial_dev)
+            if config['rts_low']:
+                # DL2MAN CAT spec: "DTR should be HIGH, RTS should be LOW on RX, may be HIGH to key CW/PTT".
+                # pyserial asserts both by default; set the states before open() so they apply right away.
+                ser.dtr = True; ser.rts = False
+            ser.open()
         except Exception as e:
             dev = find_serial_device(trusdx_serial_dev)
             print(f"truSDX device not found ({e})" if not dev else f"truSDX on {dev} could not be opened ({e}) - is another program using it?")
@@ -767,6 +773,7 @@ if __name__ == '__main__':
     parser.add_argument("-T", "--tx-block-size", type=int, default=48, help="TX Block size")
     parser.add_argument("--tx-rate", type=int, default=10473, help="TX audio sample rate sent to the trx (default 10473 = what 2 stop bits carry; 11520 overflows it)")
     parser.add_argument("--stop-bits", type=int, choices=[1, 2], default=2, help="serial stop bits to the trx (2 = even byte pacing with spare time for the trx; 1 = factory)")
+    parser.add_argument("--rts-low", action="store_true", default=False, help="hold RTS low on the trx port (DL2MAN spec: DTR high, RTS low in RX); default: pyserial default (both high)")
     parser.add_argument("--forward-if", action="store_true", default=False, help="send IF; polls to the trx instead of answering them from its FA/MD replies")
     parser.add_argument("--rawlog", default=os.environ.get('TRUSDX_RAWLOG', ''), help="debug: file to record raw data from the trx")
     args = parser.parse_args()
