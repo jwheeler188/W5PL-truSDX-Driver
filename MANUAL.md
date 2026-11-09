@@ -81,14 +81,14 @@ You need:
 |---|---|---|
 | Firmware | **R2.00u or newer** (tested 2.00x) | CAT audio streaming |
 | Menu 2.4 **Semi-QSK** | **OFF** | Semi-QSK switches back to RX on its own during digital transmissions |
-| **VOX** | **OFF** | Let WSJT-X key the radio by CAT |
+| **VOX** | **OFF** | Let WSJT-X key the radio by CAT. Check it if you used a Digirig or other sound-card interface before: those setups often have VOX on |
 | **Volume** | **10–12** | Sets the receive audio level sent to WSJT-X. See section 8 |
-| Mode | **USB** | WSJT-X sets and keeps it with *Mode: USB* (section 5) |
+| Mode | **USB** (not CW) | WSJT-X sets and keeps it with *Mode: USB* (section 5). Firmware 2.00x left in CW crashes repeatedly |
 | **Filter** (1.3) | **3000** (or Full) | FT8 signals use 200–3000 Hz; narrower filters cut off callers |
 | **NR** (1.9) | **0** (off) | Noise reduction averages the audio and smears FT8 tones |
 | **TX Drive** (3.3) | sets your power: **start low**, raise as needed | WSJT-X's Pwr slider changes the power too when TX Drive is below 8 (section 5) |
-| **CQ Interval** (4.1) | **0** | Otherwise the radio sends its own CW CQ message by itself a few seconds after each transmission |
-| CW Decoder (2.1), if your firmware has it | OFF | Not needed for digital modes |
+| **CQ Interval** (4.1) | **0** | **Check this one.** Any other value makes the radio send its own CW CQ message by itself, that many seconds after each transmission ends, in USB too (seen at 5 s on a test radio: a beep after every FT8 transmission). It may still be set from CW operating, and a crash can reset it |
+| CW Decoder (2.1), if your firmware has it | OFF | Not needed for digital modes. 2.00x has no such menu item |
 | Calibration (8.1–8.4: PA Bias, Ref freq, IQ Phase) | your calibrated values | Write them down: a crash can reset them (section 17) |
 
 > **Set the filter, volume and TX Drive on the radio before you start WSJT-X, then leave the radio's controls alone
