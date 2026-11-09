@@ -18,6 +18,7 @@
 9. [Other digital-mode programs](#9-other-digital-mode-programs)
 10. [Command-line options](#10-command-line-options)
 11. [Network CAT (`--cat-tcp`)](#11-network-cat---cat-tcp)
+   - [Radio on another computer (network radio)](#111-radio-on-another-computer-network-radio)
 12. [Troubleshooting](#12-troubleshooting)
 13. [Logs and reporting a problem](#13-logs-and-reporting-a-problem)
 14. [Updating and uninstalling](#14-updating-and-uninstalling)
@@ -383,6 +384,8 @@ run the `.exe` from a command prompt).
 | `--tx-rate N` | Transmit audio sample rate sent to the radio (default **10473**, what the link carries with 2 stop bits). |
 | `--stop-bits 1\|2` | Serial stop bits to the radio (default **2**: the link spaces the transmit audio evenly). `1` is the factory setting, for comparison only: with 1 stop bit, 11520 S/s fills the link and can leave the radio stuck keyed or rebooting, and lower rates sound garbled. |
 | `--rts-low` | Hold **RTS low** (and DTR high) on the radio's USB port, as DL2MAN's CAT spec describes. Default: both lines high, which has always worked. Tested 2026-11-08: no difference in operation. |
+| `--serial-url URL` | Use a radio plugged into another computer that runs the network bridge, for example `socket://pi-ticulum.local:4532` (section 11.1). Stop bits and RTS are then set on the bridge. |
+| `--net-buffer MS` | With `--serial-url`: transmit audio queued ahead, so network delays never leave a gap (default **200** ms; it delays your transmit audio by the same amount). |
 | `--forward-if` | Send WSJT-X's `IF;` polls to the radio instead of answering them from its `FA;`/`MD;` replies (the default since beta 2026-11-08; section 16). |
 | `-B N`, `--block-size N` | Receive audio block size (default 512). |
 | `-T N`, `--tx-block-size N` | Serial read block size (default 48). |
@@ -402,6 +405,44 @@ Instead of a virtual serial port, the driver can accept CAT on a local network p
 - The port only listens on `127.0.0.1` (this computer), so other computers can't connect to it.
 - One program at a time. A reconnect (for example, clicking Test CAT again) is handled.
 - RTS/DTR PTT isn't available in this mode.
+
+### 11.1 Radio on another computer (network radio)
+
+Plug the radio into a small Linux computer, for example a Raspberry Pi, and operate from a laptop anywhere in the
+house. The radio's audio already travels inside its USB serial link, so the Pi only forwards that link over the
+network. WSJT-X, VARA and other programs run on the laptop exactly as with a radio plugged into it.
+
+**On the Pi** (once):
+1. Copy the release folder to the Pi and run `linux/install.sh` (Python, pyserial, serial port access).
+2. Run `linux/install-netbridge.sh`. It installs the bridge as a service that starts at boot and listens on TCP
+   port **4532**. Check it with `journalctl -u trusdx-netbridge -f`.
+3. Don't run `linux/trusdx.sh` on the Pi as well: only one program can use the radio's port.
+
+**On the laptop:** install the driver as usual, then start it with the Pi's name or address:
+- macOS: `macOS/trusdx.sh --serial-url socket://pi-ticulum.local:4532`
+- Linux: `linux/trusdx.sh --serial-url socket://pi-ticulum.local:4532`
+- Windows: add `--serial-url socket://192.168.x.x:4532` to the shortcut's command line.
+
+Everything else is the same as with a local radio: WSJT-X uses `/tmp/trusdx` (or COM8, or `127.0.0.1:4542`) and the
+virtual audio device. If the connection drops, the driver reconnects by itself.
+
+**Delay:** the network adds about 10 ms on a home network (more on busy Wi-Fi). The driver queues 200 ms of transmit
+audio ahead (`--net-buffer`), so Wi-Fi hiccups don't leave gaps in your signal. FT8 decodes signals that are off by up
+to about ±2 s, so this doesn't matter.
+
+**Safety:** the bridge on the Pi un-keys the radio by itself if, while it transmits:
+- the laptop disconnects, goes to sleep or the driver stops (no transmit audio for 1.5 s, `--stall`), or
+- the bridge itself is stopped or restarted.
+
+It then ignores the rest of that transmission until the laptop un-keys too.
+
+**Bridge options** (add them to `install-netbridge.sh`, which passes them on): `--port N`, `--stop-bits 1|2`,
+`--rts-low`, `--stall SECONDS`, `--device /dev/ttyUSB0`. Remove the service with `install-netbridge.sh --remove`.
+
+The bridge has no password: anyone on your home network can reach the radio. Don't forward port 4532 on your router.
+
+Tested 2026-11-08: Raspberry Pi 4 (Ubuntu 24.04 arm64), MacBook on Wi-Fi, FT8 on 40 m (41 PSK Reporter spots in 2
+minutes, up to −2 dB). Safety un-key and reconnecting after a bridge restart also tested.
 
 ---
 

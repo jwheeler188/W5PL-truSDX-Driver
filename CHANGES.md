@@ -6,6 +6,7 @@
 |---|---|
 | 39 | New option **`--rts-low`**: DTR high, RTS low on the radio's port, per DL2MAN's CAT spec ("RTS should be LOW on RX, may be HIGH to key CW/PTT"). The default stays pyserial's (both high). Tested on air 2026-11-08 (macOS): RX, CAT, Auto Seq QSO and un-keys normal. |
 | 40 | **Linux, PipeWire: receive audio was silent** (driver audio went to the built-in speaker, not TRUSDX). PipeWire's ALSA plugin puts the process id only on the stream's client, so `trusdx.sh` never found the driver's streams to move. It now matches the stream or its client. Tested 2026-11-08 on a Raspberry Pi 4, Ubuntu 24.04 arm64, PipeWire 1.0.5: both streams on TRUSDX, RX audio present. |
+| 41 | **Network radio:** new `linux/trusdx-netbridge.py` shares the radio's serial link (audio + CAT) on TCP 4532 from a Pi; `linux/install-netbridge.sh` installs it as a boot service. The driver's new `--serial-url socket://HOST:4532` uses it, with a 200 ms transmit cushion (`--net-buffer`) against Wi-Fi delays. Safety: the bridge un-keys the radio if the laptop disconnects or its TX audio stops for 1.5 s, or if the bridge stops. Tested 2026-11-08: Pi 4 + MacBook on Wi-Fi, FT8 on 40 m, 41 PSK Reporter spots in 2 min (up to −2 dB); freezing the driver mid-TX un-keyed the radio after 1.5 s; the driver reconnected after a bridge restart. |
 
 ## beta 2026-11-08-3 (clean transmit audio)
 

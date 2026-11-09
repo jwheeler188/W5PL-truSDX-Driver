@@ -41,6 +41,7 @@ import serial
 import serial.tools.list_ports
 import threading
 import time
+import socket
 import os
 import datetime
 import array
@@ -278,13 +279,18 @@ def start_tx(ser, pastream, why):
     ser.flush()
     # fix: ~40 ms of silence first (no flush: it must stay queued), so jitter in the audio input never leaves a gap on
     # the link (the trx would hear one as a click). The link drains as fast as audio arrives, so the backlog stays.
-    ser.write(bytes([0x80]) * (audio_tx_rate // 25))
+    # Over the network the cushion is larger (--net-buffer, default 200 ms) so Wi-Fi delays never leave a gap.
+    ser.write(bytes([0x80]) * (audio_tx_rate * tx_prefill_ms() // 1000))
     status[0] = True
     tx_broken[0] = False
     log(f"I: TX0; + US ({why})")
     if pastream:
         pastream.stop_stream()
         pastream.start_stream()
+
+def tx_prefill_ms():
+    """Silence queued ahead of the TX audio: 40 ms on USB, --net-buffer (200 ms) over the network."""
+    return config['net_buffer'] if config['serial_url'] else 40
 
 def stop_tx(ser, pastream, why):
     """Un-key. Measured on firmware 2.00x: stop the TX audio, 200 ms quiet, ;RX;, 100 ms, ;UA2;
@@ -294,7 +300,8 @@ def stop_tx(ser, pastream, why):
     status[0] = False                    # no more TX audio from the loop
     ser.flush()                          # wait until queued TX audio has left the port
     unkey_ts[0] = time.time()            # drop stray ?;/E; and answer polls from cache meanwhile
-    if was_tx: time.sleep(0.2)
+    # over the network flush() can't wait for the Pi's port: the TX cushion is still queued there, so wait it out too
+    if was_tx: time.sleep(0.2 + (tx_prefill_ms() / 1000 if config['serial_url'] else 0))
     ser.write(b";RX;")
     ser.flush()
     time.sleep(0.1)
@@ -668,15 +675,28 @@ def run():
         try:
             # fix: was write_timeout=0 (non-blocking): during TX the link is full of audio, so pieces of the
             # audio, ';', 'US' and even 'RX;' were silently dropped -> E; floods and a trx stuck in TX.
-            ser = serial.Serial(None, 115200, write_timeout = 2,
-                                stopbits = serial.STOPBITS_TWO if config['stop_bits'] == 2 else serial.STOPBITS_ONE)
-            ser.port = find_serial_device(trusdx_serial_dev)
-            if config['rts_low']:
-                # DL2MAN CAT spec: "DTR should be HIGH, RTS should be LOW on RX, may be HIGH to key CW/PTT".
-                # pyserial asserts both by default; set the states before open() so they apply right away.
-                ser.dtr = True; ser.rts = False
-            ser.open()
+            if config['serial_url']:
+                # new: radio on another computer (linux/trusdx-netbridge.py), e.g. socket://pi.local:4532. Stop bits
+                # and RTS are set by the bridge, which also un-keys the radio if this laptop drops off the network.
+                ser = serial.serial_for_url(config['serial_url'], do_not_open = True, baudrate = 115200, write_timeout = 2)
+                ser.open()
+                try: ser._socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)   # 20 ms audio pieces, no Nagle delay
+                except Exception: pass
+                print(f"Radio over the network: {config['serial_url']}")
+            else:
+                ser = serial.Serial(None, 115200, write_timeout = 2,
+                                    stopbits = serial.STOPBITS_TWO if config['stop_bits'] == 2 else serial.STOPBITS_ONE)
+                ser.port = find_serial_device(trusdx_serial_dev)
+                if config['rts_low']:
+                    # DL2MAN CAT spec: "DTR should be HIGH, RTS should be LOW on RX, may be HIGH to key CW/PTT".
+                    # pyserial asserts both by default; set the states before open() so they apply right away.
+                    ser.dtr = True; ser.rts = False
+                ser.open()
         except Exception as e:
+            if config['serial_url']:
+                print(f"Network radio {config['serial_url']} not reachable ({e}) - is the bridge running on the Pi?")
+                time.sleep(3)
+                raise
             dev = find_serial_device(trusdx_serial_dev)
             print(f"truSDX device not found ({e})" if not dev else f"truSDX on {dev} could not be opened ({e}) - is another program using it?")
             time.sleep(2)   # retry every few seconds instead of flooding the window
@@ -774,6 +794,8 @@ if __name__ == '__main__':
     parser.add_argument("--tx-rate", type=int, default=10473, help="TX audio sample rate sent to the trx (default 10473 = what 2 stop bits carry; 11520 overflows it)")
     parser.add_argument("--stop-bits", type=int, choices=[1, 2], default=2, help="serial stop bits to the trx (2 = even byte pacing with spare time for the trx; 1 = factory)")
     parser.add_argument("--rts-low", action="store_true", default=False, help="hold RTS low on the trx port (DL2MAN spec: DTR high, RTS low in RX); default: pyserial default (both high)")
+    parser.add_argument("--serial-url", default="", metavar="URL", help="radio on another computer running linux/trusdx-netbridge.py, e.g. socket://pi.local:4532 (stop bits/RTS are set on the bridge)")
+    parser.add_argument("--net-buffer", type=int, default=200, metavar="MS", help="with --serial-url: TX audio cushion against network delays (adds this much TX delay)")
     parser.add_argument("--forward-if", action="store_true", default=False, help="send IF; polls to the trx instead of answering them from its FA/MD replies")
     parser.add_argument("--rawlog", default=os.environ.get('TRUSDX_RAWLOG', ''), help="debug: file to record raw data from the trx")
     args = parser.parse_args()
