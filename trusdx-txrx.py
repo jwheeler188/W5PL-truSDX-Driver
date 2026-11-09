@@ -74,6 +74,7 @@ rx_any_ts = [0.0]          # last time ANY byte came from the trx (audio, CAT re
 ua_tries = [0]             # watchdog UA attempts in the current outage
 outage = [False]           # trx stopped streaming in RX and has not streamed steadily since
 outage_times = []          # start times of recent outages (boot-loop detection)
+after_tx = []              # frequency/mode changes received during TX, sent once the trx streams RX again
 pause_until = [0.0]        # boot-loop breaker: no traffic to the trx until this time
 t_unkey = [0.0]   # time the last un-key sequence finished
 second_unkey_at = [0]  # when to send the 2nd RX+UA after an un-key (0 = none pending)
@@ -426,6 +427,14 @@ def handle_cat(pastream, ser, cat):
                 cat_write(cat, r)
                 log(f"I: {d} answered from cache during TX: {r}")
                 return
+            if d[:2] in (b"FA", b"FB", b"MD") and len(d) > 3:
+                # fix: a band/frequency or mode change during TX (WSJT-X band change while transmitting) was sent
+                # into the TX audio stream; the trx rejects it there (E;), stops TX audio, and stayed on the old band.
+                # Hold it until the trx is back in RX and streaming; polls see the new value meanwhile.
+                after_tx.append(d)
+                if d[:2] != b"FB": reply_cache[d[:2]] = d
+                log(f"I: {d} held until after TX")
+                return
             if len(d) == 3:
                 # fix: hamlib re-opening the rig during TX sent KS; which broke the TX audio stream ("left TX audio
                 # mode"). A query the driver can't answer gets ?; (what the trx answers to unknown queries anyway).
@@ -472,6 +481,12 @@ def transmit_audio_via_serial(pastream, ser, cat, gen=None):
                     ser.flush()
                     unkey_ts[0] = time.time()   # extends cache answers / stray-reply filter while it settles
                     log("I: ;RX; + UA (2nd un-key sequence)")
+            if after_tx and not status[0] and rx_seen_ts[0] > t_unkey[0]:
+                # the trx is back in RX and streaming: now apply the frequency/mode changes held during TX
+                for c in after_tx: ser.write(c)
+                ser.flush()
+                log(f"I: sent after TX: {b''.join(after_tx)}")
+                after_tx.clear()
             # fix: a trx that crashed (front-panel input while streaming) reboots in ~4 s; a UA during its startup
             # crashed it again (boot loop every ~6 s, seen 2026-11-07). After the first try, only re-send UA once the
             # trx has been completely quiet for 5 s, i.e. has finished booting.

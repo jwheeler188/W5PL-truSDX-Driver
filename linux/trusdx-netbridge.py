@@ -13,7 +13,7 @@ rest of that transmission until the driver sends its own ;RX;.
 The serial port stays open while the bridge runs (opening it can restart the radio), with the same settings as the
 driver: 115200 baud, 2 stop bits (even TX byte pacing), DTR/RTS as pyserial sets them (or --rts-low).
 """
-import argparse, datetime, socket, threading, time, sys
+import argparse, datetime, re, socket, threading, time, sys
 import serial, serial.tools.list_ports
 
 p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -79,9 +79,19 @@ def serial_loop():
             log(f"cannot open {dev}: {e}"); time.sleep(3); continue
         log(f"radio port {dev} open (115200, {a.stop_bits} stop bits{', RTS low' if a.rts_low else ''})")
         with lock: st["ser"] = ser
+        last_rx = time.time(); quiet = False
         try:
             while True:
                 d = ser.read(4096)
+                now = time.time()
+                # diagnostics: the radio streams RX audio non-stop; log when it goes quiet and comes back (crash/
+                # reboot or busy after a band change) - this tells radio problems apart from network problems
+                if d:
+                    if quiet and a.verbose: log(f"radio sending again after {now - last_rx:.1f} s quiet")
+                    last_rx = now; quiet = False; st["radio_ts"] = now
+                elif not quiet and not st["tx"] and now - last_rx > 1.5 and st["client"] is not None:
+                    quiet = True
+                    if a.verbose: log("radio quiet for 1.5 s (not streaming: busy, crashed or rebooting)")
                 c = st["client"]
                 if d and c:
                     try: c.sendall(d)
@@ -122,6 +132,10 @@ def client_loop(c, addr):
                 log("driver un-keyed too: forwarding again")
             was_tx = st["tx"]
             track(d)
+            if a.verbose:
+                for f in re.findall(rb"FA(\d{11});", d):   # frequency set by the laptop (band changes)
+                    if f != st.get("freq"):
+                        st["freq"] = f; log(f"laptop set frequency {int(f) / 1e6:.3f} MHz")
             ser = st["ser"]
         if ser is None: continue
         try: forward(ser, d, was_tx)
@@ -169,6 +183,19 @@ def watchdog():
             if st["tx"] and st["client"] is not None and time.time() - st["last_in"] > a.stall:
                 unkey(f"no transmit audio from the laptop for {a.stall:.1f} s")
                 st["mute"] = True; st["tail"] = b""
+                st["retry_at"] = time.time() + 1.5; st["retry_gap"] = 1.5; st["unkey_ts"] = time.time()
+            # after a safety un-key: if the radio doesn't stream again (it was busy, e.g. a band change mid-TX, and
+            # missed the un-key), repeat ;RX; ;UA2; with back-off until it does (seen 2026-11-09: silent 57 s)
+            if st.get("retry_at") and st["ser"] is not None:
+                if st.get("radio_ts", 0) > st["unkey_ts"] + 0.5:
+                    log("radio streaming again after the safety un-key"); st["retry_at"] = 0
+                elif time.time() >= st["retry_at"]:
+                    try:
+                        st["ser"].write(b";RX;"); st["ser"].flush(); time.sleep(0.1); st["ser"].write(b";UA2;"); st["ser"].flush()
+                        log(f"radio still silent after the safety un-key: repeated ;RX; ;UA2;")
+                    except Exception as e: log(f"repeat un-key failed ({e})")
+                    st["retry_gap"] = min(st["retry_gap"] * 2, 8.0); st["retry_at"] = time.time() + st["retry_gap"]
+                    if time.time() - st["unkey_ts"] > 120: st["retry_at"] = 0   # give up after 2 min
 
 def on_stop(signum, frame):
     """Service stop/restart or Ctrl+C: never leave the radio keyed."""
