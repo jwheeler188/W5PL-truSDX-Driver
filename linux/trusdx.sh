@@ -40,12 +40,17 @@ elif command -v pactl >/dev/null && pactl info >/dev/null 2>&1; then
   export PULSE_SINK=TRUSDX PULSE_SOURCE=TRUSDX.monitor
   # ... and on systems where ALSA talks to PipeWire directly, move the driver's streams to TRUSDX every few seconds
   # (also after a radio reconnect, which opens new streams). Same as doing it by hand in pavucontrol.
+  # A stream belongs to the driver if it carries the driver's process id itself (PulseAudio) or its client does
+  # (PipeWire's ALSA plugin puts application.process.id only on the client, e.g. Ubuntu 24.04 on a Raspberry Pi).
+  streams_of() {  # $1 = pid, $2 = "Sink Input" or "Source Output"
+    local clients; clients=$(pactl list clients 2>/dev/null | awk -v p="$1" '/^Client #/{c=substr($2,2)} /application.process.id = /{gsub(/"/,"",$3); if($3==p) print c}')
+    pactl list "$([[ $2 == Sink* ]] && echo sink-inputs || echo source-outputs)" 2>/dev/null |
+      awk -v p="$1" -v cl=" $(echo $clients) " -v h="$2" 'index($0,h" #")==1{id=substr($NF,2)} /^\tClient: /{if(index(cl," "$2" ")) print id} /application.process.id = /{gsub(/"/,"",$3); if($3==p) print id}' | sort -u
+  }
   ( while sleep 3; do
       pid=$(driver_pids | head -1); [[ -z "$pid" ]] && continue
-      pactl list sink-inputs 2>/dev/null | awk -v p="$pid" '/^Sink Input #/{id=substr($3,2)} /application.process.id = /{gsub(/"/,"",$3); if($3==p) print id}' |
-        while read -r id; do pactl move-sink-input "$id" TRUSDX 2>/dev/null; done
-      pactl list source-outputs 2>/dev/null | awk -v p="$pid" '/^Source Output #/{id=substr($3,2)} /application.process.id = /{gsub(/"/,"",$3); if($3==p) print id}' |
-        while read -r id; do pactl move-source-output "$id" TRUSDX.monitor 2>/dev/null; done
+      streams_of "$pid" "Sink Input" | while read -r id; do pactl move-sink-input "$id" TRUSDX 2>/dev/null; done
+      streams_of "$pid" "Source Output" | while read -r id; do pactl move-source-output "$id" TRUSDX.monitor 2>/dev/null; done
     done ) &
   MOVER=$!
   trap '[[ -n "$MOVER" ]] && kill $MOVER 2>/dev/null' EXIT

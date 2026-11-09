@@ -5,6 +5,7 @@
 | # | Change |
 |---|---|
 | 39 | New option **`--rts-low`**: DTR high, RTS low on the radio's port, per DL2MAN's CAT spec ("RTS should be LOW on RX, may be HIGH to key CW/PTT"). The default stays pyserial's (both high). Tested on air 2026-11-08 (macOS): RX, CAT, Auto Seq QSO and un-keys normal. |
+| 40 | **Linux, PipeWire: receive audio was silent** (driver audio went to the built-in speaker, not TRUSDX). PipeWire's ALSA plugin puts the process id only on the stream's client, so `trusdx.sh` never found the driver's streams to move. It now matches the stream or its client. Tested 2026-11-08 on a Raspberry Pi 4, Ubuntu 24.04 arm64, PipeWire 1.0.5: both streams on TRUSDX, RX audio present. |
 
 ## beta 2026-11-08-3 (clean transmit audio)
 
