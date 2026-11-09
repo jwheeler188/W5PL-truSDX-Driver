@@ -29,7 +29,7 @@ a = p.parse_args()
 def log(msg): print(f"{datetime.datetime.now(datetime.timezone.utc):%Y-%m-%d %H:%M:%S} {msg}", flush=True)
 
 lock = threading.Lock()
-st = {"ser": None, "client": None, "tx": False, "last_in": 0.0, "mute": False, "tail": b""}
+st = {"ser": None, "client": None, "tx": False, "last_in": 0.0, "mute": False, "tail": b"", "hold": b"", "gap_until": 0.0}
 
 def find_device():
     if a.device: return a.device
@@ -40,7 +40,7 @@ def find_device():
 def unkey(why):
     """Measured un-key sequence for firmware 2.00x. Caller holds lock."""
     ser = st["ser"]
-    st["tx"] = False
+    st["tx"] = False; st["hold"] = b""
     if ser is None: return
     try:
         time.sleep(0.2); ser.write(b";RX;"); ser.flush()
@@ -120,12 +120,47 @@ def client_loop(c, addr):
                     st["tail"] = (st["tail"] + d)[-4:]; continue
                 d = (st["tail"] + d)[k:]; st["mute"] = False; st["tail"] = b""
                 log("driver un-keyed too: forwarding again")
+            was_tx = st["tx"]
             track(d)
             ser = st["ser"]
         if ser is None: continue
-        try: ser.write(d)
+        try: forward(ser, d, was_tx)
         except Exception as e: log(f"write to radio failed ({e})")
     if st["client"] is c: drop_client("connection closed")
+
+def forward(ser, d, was_tx):
+    """Write to the radio with the measured key/un-key timing applied HERE, next to the radio, where it is exact
+    (the laptop can't see when queued audio has left this port, and waiting there would make hamlib/xara wait):
+      TX0;  -> 50 ms before the next bytes (the radio switches to TX before "US" + audio)
+      ;RX;  -> only after all queued TX audio has left the port + 200 ms quiet; then 100 ms before the next bytes
+    The driver sends ;RX; and ;UA2; back to back over the network and relies on this."""
+    d = st["hold"] + d; st["hold"] = b""
+    if was_tx and b"RX;" not in d:                # (a complete ;RX; also ends in ';': never hold that one back)
+        for p in (b";RX", b";R", b";"):           # an ;RX; split across packets: wait for the rest
+            if d.endswith(p): st["hold"] = p; d = d[:-len(p)]; break
+    gap = st["gap_until"] - time.time()
+    if gap > 0: time.sleep(gap)
+    k = d.find(b"RX;") if was_tx else -1
+    if k >= 0:
+        j = k - 1 if k > 0 and d[k - 1:k] == b";" else k
+        if j: ser.write(d[:j])
+        t_drain = time.time()
+        ser.flush()                                # tcdrain: the TX audio cushion has really been sent
+        t_drain = time.time() - t_drain
+        time.sleep(0.2)
+        ser.write(d[j:k + 3]); ser.flush()
+        if a.verbose: log(f"un-key: audio drained in {t_drain * 1000:.0f} ms, 200 ms quiet, then {d[j:k + 3]!r}")
+        st["gap_until"] = time.time() + 0.1
+        rest = d[k + 3:]
+        if rest: time.sleep(0.1); ser.write(rest)
+        return
+    t = max(d.rfind(b"TX0;"), d.rfind(b"TX1;"), d.rfind(b"TX2;"))
+    if t >= 0 and not was_tx:
+        ser.write(d[:t + 4]); ser.flush()
+        time.sleep(0.05)
+        if d[t + 4:]: ser.write(d[t + 4:])
+        return
+    if d: ser.write(d)
 
 def watchdog():
     while True:
@@ -156,6 +191,6 @@ while True:
     c.settimeout(5)   # a laptop that stops reading RX audio for 5 s is gone
     if st["client"] is not None: drop_client(f"new connection from {addr[0]}")
     with lock:
-        st["client"] = c; st["last_in"] = time.time(); st["mute"] = False; st["tail"] = b""
+        st["client"] = c; st["last_in"] = time.time(); st["mute"] = False; st["tail"] = b""; st["hold"] = b""
     log(f"laptop connected from {addr[0]}")
     threading.Thread(target=client_loop, args=(c, addr), daemon=True).start()

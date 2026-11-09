@@ -430,6 +430,23 @@ virtual audio device. If the connection drops, the driver reconnects by itself.
 audio ahead (`--net-buffer`), so Wi-Fi hiccups don't leave gaps in your signal. FT8 decodes signals that are off by up
 to about ±2 s, so this doesn't matter.
 
+**Key/un-key timing** is applied by the bridge, next to the radio: it waits until the queued transmit audio has really
+left the port, then 200 ms of quiet, `;RX;`, 100 ms, `;UA2;`. So the driver answers PTT commands at once
+(about 0.36 s through rigctld), well inside xara's 1 s PTT limit.
+
+**VARA (xara), Pat and WSJT-X through rigctld.** Let rigctld be the only program on the driver's CAT port and point
+every program at it. Start in this order:
+1. The driver (above).
+2. `rigctld -m 2055 -r /tmp/trusdx -s 115200 -t 4532 -T 127.0.0.1`
+3. One program at a time:
+   - **WSJT-X:** Rig *Hamlib NET rigctl*, Network Server `127.0.0.1:4532`, PTT Method *CAT*.
+   - **xara:** `--radio --ptt rigctld:127.0.0.1:4532` (use `--ui-port 8081` if Pat already uses 8080).
+   - **Pat (Winlink):** rig address `127.0.0.1:4532`, VARA HF at `localhost:8300` (xara).
+
+Don't run WSJT-X and xara at the same time: WSJT-X's polling can delay xara's PTT past its 1 s limit, and xara then
+exits. The CAT port `/tmp/trusdx` stays the same when the driver reconnects, so rigctld doesn't need restarting after
+a Wi-Fi drop or a radio reboot.
+
 **Safety:** the bridge on the Pi un-keys the radio by itself if, while it transmits:
 - the laptop disconnects, goes to sleep or the driver stops (no transmit audio for 1.5 s, `--stall`), or
 - the bridge itself is stopped or restarted.
@@ -442,7 +459,9 @@ It then ignores the rest of that transmission until the laptop un-keys too.
 The bridge has no password: anyone on your home network can reach the radio. Don't forward port 4532 on your router.
 
 Tested 2026-11-08: Raspberry Pi 4 (Ubuntu 24.04 arm64), MacBook on Wi-Fi, FT8 on 40 m (41 PSK Reporter spots in 2
-minutes, up to −2 dB). Safety un-key and reconnecting after a bridge restart also tested.
+minutes, up to −2 dB). Safety un-key and reconnecting after a bridge restart also tested. VARA (xara 0.1.3 through
+rigctld): 5 connect calls keyed and un-keyed cleanly, xara stayed up. A full VARA connection to another station is
+not tested yet.
 
 ---
 

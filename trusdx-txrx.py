@@ -274,7 +274,7 @@ def start_tx(ser, pastream, why):
     ser.flush()
     # give the trx a moment to switch to TX, then announce the audio stream with "US" (per the (tr)uSDX
     # CAT docs audio follows US). Audio sent straight after TX0 was parsed as commands -> E;
-    time.sleep(0.05)
+    if not config['serial_url']: time.sleep(0.05)   # over the network the bridge waits the 50 ms next to the radio
     ser.write(b"US")
     ser.flush()
     # fix: ~40 ms of silence first (no flush: it must stay queued), so jitter in the audio input never leaves a gap on
@@ -300,16 +300,18 @@ def stop_tx(ser, pastream, why):
     status[0] = False                    # no more TX audio from the loop
     ser.flush()                          # wait until queued TX audio has left the port
     unkey_ts[0] = time.time()            # drop stray ?;/E; and answer polls from cache meanwhile
-    # over the network flush() can't wait for the Pi's port: the TX cushion is still queued there, so wait it out too
-    if was_tx: time.sleep(0.2 + (tx_prefill_ms() / 1000 if config['serial_url'] else 0))
+    # over the network the bridge on the Pi applies this timing next to the radio (it can see when the queued audio
+    # has left the port); waiting here too would only make hamlib/xara wait (xara exits if PTT takes over 1 s)
+    net = bool(config['serial_url'])
+    if was_tx and not net: time.sleep(0.2)
     ser.write(b";RX;")
     ser.flush()
-    time.sleep(0.1)
+    if not net: time.sleep(0.1)
     ser.write(b";" + ua_cmd())           # trx drops RX streaming after TX: re-enable it
     ser.flush()
     unkey_ts[0] = t_unkey[0] = time.time()
     second_unkey_at[0] = time.time() + 1.5   # fallback only, fires if no RX audio came back
-    log(f"I: {'200 ms quiet, ' if was_tx else ''};RX; + ;UA; ({why})")
+    log(f"I: {('timing by the bridge, ' if net else '200 ms quiet, ') if was_tx else ''};RX; + ;UA; ({why})")
     if pastream:
         pastream.stop_stream()
         pastream.start_stream()
@@ -558,11 +560,12 @@ class TcpCat:
     def close(self): pass                 # the listening socket lives for the whole driver run
 
 TCP_CAT = [None]
+PTY = [None]       # (cat dev, loopback dev, fds): the CAT port pair, created once per driver start
 
 def pty_echo(fd1, fd2):
     try:
         log("pty_echo")
-        while status[2]:
+        while True:   # lives as long as the driver: the CAT port pair is kept across reconnects
             c1 = fd1.read(1)
             fd2.write(c1)
             #print(f'{datetime.datetime.utcnow()} {threading.current_thread().ident} > ', c1)
@@ -637,19 +640,22 @@ def run():
            cat_serial_dev = f"127.0.0.1:{config['cat_tcp']}"
            print(f"CAT over TCP: set the WSJT-X Serial Port to {cat_serial_dev}")
         elif platform != "win32":  # skip for Windows as we have com0com there
-           _master1, slave1 = os.openpty()  # make a tty <-> tty device where one end is opened as serial device, other end by CAT app
-           _master2, slave2 = os.openpty()
-           master1 = os.fdopen(_master1, 'rb+', 0)
-           master2 = os.fdopen(_master2, 'rb+', 0)
-           threading.Thread(target=pty_echo, args=(master1,master2)).start()
-           threading.Thread(target=pty_echo, args=(master2,master1)).start()
-           cat_serial_dev = os.ttyname(slave1)
-           if platform in ("darwin", "linux", "linux2"):  # stable CAT port name: the /dev/ttysNNN (/dev/pts/N) number changes every run
-              alt_cat_serial_dev = "/tmp/trusdx"
-              if os.path.lexists(alt_cat_serial_dev): os.remove(alt_cat_serial_dev)
-              os.symlink(cat_serial_dev, alt_cat_serial_dev)
-              print(f"Stable CAT port: {alt_cat_serial_dev} -> {cat_serial_dev}  (use {alt_cat_serial_dev} in WSJT-X)")
-           loopback_serial_dev = os.ttyname(slave2)
+           # fix: create the CAT port pair ONCE and keep it across reconnects (USB replug, radio reboot, network
+           # drop). A new pair per run moved /tmp/trusdx, so rigctld/WSJT-X stayed on the old, dead port.
+           if PTY[0] is None:
+              _master1, slave1 = os.openpty()  # make a tty <-> tty device where one end is opened as serial device, other end by CAT app
+              _master2, slave2 = os.openpty()
+              master1 = os.fdopen(_master1, 'rb+', 0)
+              master2 = os.fdopen(_master2, 'rb+', 0)
+              threading.Thread(target=pty_echo, args=(master1,master2), daemon=True).start()
+              threading.Thread(target=pty_echo, args=(master2,master1), daemon=True).start()
+              PTY[0] = (os.ttyname(slave1), os.ttyname(slave2), slave1, slave2)
+              if platform in ("darwin", "linux", "linux2"):  # stable CAT port name: the /dev/ttysNNN (/dev/pts/N) number differs every start
+                 alt_cat_serial_dev = "/tmp/trusdx"
+                 if os.path.lexists(alt_cat_serial_dev): os.remove(alt_cat_serial_dev)
+                 os.symlink(PTY[0][0], alt_cat_serial_dev)
+                 print(f"Stable CAT port: {alt_cat_serial_dev} -> {PTY[0][0]}  (use {alt_cat_serial_dev} in WSJT-X)")
+           cat_serial_dev, loopback_serial_dev = PTY[0][0], PTY[0][1]
         try:
             # fix: write_timeout=0 means non-blocking writes that silently DROP bytes when the buffer is full
             ser2 = TCP_CAT[0] if tcp else serial.Serial(loopback_serial_dev, 115200, write_timeout = 2)
@@ -740,13 +746,7 @@ def run():
         log("Closing")
         time.sleep(1)   
         if platform != "win32" and not config['cat_tcp'] > 0:  # Linux/macOS pty pair (none in TCP mode)
-           #master1.close()
-           #master2.close()
-           #os.close(_master1)           
-           os.close(slave1)
-           #os.close(_master2)
-           os.close(slave2)
-           log("fd closed")
+           pass   # the CAT port pair stays open for the next run (see PTY)
         ser2.close()
         ser.close()
     except Exception as e:
