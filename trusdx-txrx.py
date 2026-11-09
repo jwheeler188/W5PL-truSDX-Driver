@@ -333,9 +333,14 @@ def handle_vox(samples8, ser, pastream=None):
 def handle_rts_dtr(ser, cat, pastream=None):
     if not status[4] and (cat.cts or cat.dsr):
         status[4] = True    # keyed by RTS/DTR
+        # fix: this keyed the radio silently. A program that opens COM8 with DTR/RTS high (WSJT-X with Force Control
+        # Lines blank, seen 2026-11-09) transmits without anyone pressing TX. Say so, and how to turn it off.
+        print(f"{datetime.datetime.utcnow()} KEYED by {'RTS' if cat.cts else 'DTR'} on COM8 (RTS/DTR PTT). If you didn't "
+              "press TX: set DTR and RTS to Low in the program, or start the driver with --no-rtsdtr")
         start_tx(ser, pastream, "RTS/DTR")
     elif status[4] and not (cat.cts or cat.dsr):  #if keyed by RTS/DTR
         status[4] = False
+        print(f"{datetime.datetime.utcnow()} un-keyed: RTS/DTR on COM8 dropped")
         stop_tx(ser, pastream, "RTS/DTR")
 
 def silence_limit():

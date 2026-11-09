@@ -223,14 +223,18 @@ Start the driver first and wait for `(tr)uSDX driver OK!`, then start WSJT-X.
 | **PTT Method** | **CAT** (RTS/DTR also works) | **CAT** | **CAT** | **CAT** (or VOX) |
 | **Mode** | **USB** | USB | USB | USB |
 | Split Operation | None | None | None | None |
-| Force Control Lines (DTR / RTS) | **blank** | **blank** | **blank** | **blank** |
+| Force Control Lines (DTR / RTS) | **Low / Low** (see below) | **blank** | **blank** | **blank** |
 | Transmit Audio Source | either | either | either | either |
 
 **Poll Interval:** any value works with this driver. On firmware 2.00x, a few seconds (2–5 s) means less CAT traffic
 while you operate, which seemed to make the front-panel crash (section 17) less likely.
 
-**Force Control Lines:** leave DTR and RTS blank. On macOS and Linux the CAT port is a virtual port, and Hamlib reports
-an error when WSJT-X tries to force its control lines.
+**Force Control Lines:** on **Windows (COM8)** set DTR **Low** and RTS **Low**. The driver treats DTR or RTS on COM8 as
+PTT, and a program that opens COM8 with them high **keys the radio without you pressing TX** (seen 2026-11-09: the
+radio transmitted silence until WSJT-X let go of the port). If all your programs use CAT PTT, start the driver with
+**`--no-rtsdtr`** instead; that turns RTS/DTR PTT off completely. The driver window now prints "KEYED by RTS/DTR"
+whenever this happens. On macOS and Linux leave both blank: the CAT port is a virtual port, and Hamlib reports an error
+when WSJT-X tries to force its control lines.
 
 **Mode: USB** makes WSJT-X put the radio in USB by CAT (safe), including if it was left in another mode. *None* also
 works, but then the radio must already be in USB.
@@ -379,7 +383,7 @@ run the `.exe` from a command prompt).
 | `--rx-audio NAME` | Audio device the driver **plays receive audio to** (the app records from it). Any part of the device name; `-v` lists the devices. |
 | `--tx-audio NAME` | Audio device the driver **records transmit audio from** (the app plays into it). |
 | `--alsa` | (Linux launcher `trusdx.sh` only) Use the ALSA loopback even when PulseAudio/PipeWire runs. |
-| `--no-rtsdtr` | (Windows) Ignore RTS/DTR on COM8 as PTT. |
+| `--no-rtsdtr` | (Windows) Ignore RTS/DTR on COM8 as PTT. **Recommended when every program uses CAT PTT**: otherwise a program that opens COM8 with DTR/RTS high keys the radio. |
 | `--vox` | (Linux) Key the radio when transmit audio arrives (VOX PTT). |
 | `--tx-rate N` | Transmit audio sample rate sent to the radio (default **10473**, what the link carries with 2 stop bits). |
 | `--stop-bits 1\|2` | Serial stop bits to the radio (default **2**: the link spaces the transmit audio evenly). `1` is the factory setting, for comparison only: with 1 stop bit, 11520 S/s fills the link and can leave the radio stuck keyed or rebooting, and lower rates sound garbled. |
@@ -482,6 +486,7 @@ not tested yet.
 | WSJT-X **Test CAT** red, "Communication timed out" | Wrong serial port, or WSJT-X was started before the driver. Check the port (Windows `COM8` / ARM `127.0.0.1:4542` / Mac and Linux `/tmp/trusdx`), wait for `driver OK!`, then Test CAT again. |
 | WSJT-X **"Hamlib error: Protocol error"** | An older driver or two copies are running. Close all copies and start this one again. |
 | **Conflict on COM port COM8/COM9** (Windows) | The radio's USB port got COM8 or COM9. Change it in Device Manager → CH340 → Port Settings → Advanced. |
+| Radio **transmits by itself** when WSJT-X or VARA opens COM8, or band changes "lock" (Windows) | The program raised DTR/RTS on COM8, which the driver takes as PTT (the window shows "KEYED by RTS/DTR"). Start the driver with `--no-rtsdtr`, or set Force Control Lines DTR/RTS to Low (section 5). |
 | `Audio device could not be opened` | **Windows:** reinstall VB-CABLE (run the installer again). **macOS:** install BlackHole 2ch and restart. **Linux:** run `./trusdx.sh` (it creates TRUSDX), or check `pactl info` works. |
 | WSJT-X input meter **at zero, flickering, or "dropping out"** | Receive level too low: turn the radio's volume up (section 8). |
 | **No decodes**, but the input meter and waterfall look normal | Usually **noise, not the driver**: the waterfall is speckled with no FT8 traces, and the noise is louder than usual at the same volume. The most common source is the **laptop's power charger** (also USB hubs, LED lights, monitors). Unplug the charger and run on battery, or move it away from the antenna and the radio's USB cable. Also check the antenna connection, the radio's filter (3 kHz or full, not narrower), and the band (20 m fades after sunset; try 40 m). |
