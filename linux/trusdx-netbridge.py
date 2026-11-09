@@ -188,7 +188,7 @@ while True:
     c, addr = srv.accept()
     c.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     c.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    c.settimeout(5)   # a laptop that stops reading RX audio for 5 s is gone
+    c.settimeout(20)  # a laptop that stops reading RX audio for 20 s is gone (Wi-Fi stalls of seconds happen)
     if st["client"] is not None: drop_client(f"new connection from {addr[0]}")
     with lock:
         st["client"] = c; st["last_in"] = time.time(); st["mute"] = False; st["tail"] = b""; st["hold"] = b""

@@ -232,6 +232,11 @@ def play_receive_audio(pastream, gen=None):
                 while len(buf) < 10 and alive(gen):
                     time.sleep(0.001)
                 continue
+            # fix: after a network stall (--serial-url on weak Wi-Fi) RX audio arrives in a burst; the elastic buffer
+            # below catches up only ~2%, leaving RX audio late for a minute (FT8 DT off). Drop the backlog instead.
+            if len(buf) > 80:
+                del buf[:len(buf) - 20]
+                log("I: RX audio backlog dropped (arrived late in a burst)")
             d = buf.pop(0)
             # fix: the trx's sample clock runs ~0.15% slower than the nominal 7812 S/s the audio device plays, so
             # the buffer slowly drained and a ~50 ms gap (underrun + refill) came every ~30 s. Elastic buffer:
@@ -258,12 +263,13 @@ def ua_cmd():
 
 def start_tx(ser, pastream, why):
     """Key the trx for CAT-streamed TX audio. Shared by CAT, RTS/DTR and VOX PTT."""
-    if time.time() - rx_seen_ts[0] > 1.0:
+    wait = 3.0 if config['serial_url'] else 1.0      # over the network RX audio can pause for a second on Wi-Fi
+    if time.time() - rx_seen_ts[0] > wait:
         # trx not streaming: TX0 would key it without TX audio mode (E; flood, stuck). Re-enable first.
         ser.write(ua_cmd())
         ser.flush()
         ua_ts[0] = t0 = time.time()
-        while time.time() - t0 < 1.0 and rx_seen_ts[0] < t0: time.sleep(0.02)
+        while time.time() - t0 < wait and rx_seen_ts[0] < t0: time.sleep(0.02)
         log(f"I: UA before TX (trx was not streaming) -> streaming {'back' if rx_seen_ts[0] >= t0 else 'NOT back'}")
         if rx_seen_ts[0] < t0:
             # SAFETY: keying a trx that isn't in CAT streaming mode puts it in TX without audio mode; it then floods
@@ -331,12 +337,17 @@ def handle_rts_dtr(ser, cat, pastream=None):
         status[4] = False
         stop_tx(ser, pastream, "RTS/DTR")
 
+def silence_limit():
+    """Seconds without RX audio before the trx counts as not responding. Over USB a gap means a crash/reboot; over
+    the network (--serial-url) Wi-Fi stalls of 1-2 s are normal (measured: 15% loss, 0.6 s spikes), so wait longer."""
+    return 4.0 if config['serial_url'] else 1.5
+
 def trx_silent(now=None):
     """In RX the trx streams audio continuously; if none has arrived for 1.5 s it is not responding (rebooting
     after a crash, e.g. when its buttons/knobs are used while streaming, or busy). Not during TX or right after it."""
     now = now or time.time()
     if status[0] or now - unkey_ts[0] <= 2.0 or now - start_ts[0] <= 5.0: return False
-    if now - rx_seen_ts[0] > 1.5: return True
+    if now - rx_seen_ts[0] > silence_limit(): return True
     return outage[0] and now - audio_streak_ts[0] < 1.0   # boot bursts don't count as 'back'
 
 def handle_cat(pastream, ser, cat):

@@ -426,6 +426,12 @@ network. WSJT-X, VARA and other programs run on the laptop exactly as with a rad
 Everything else is the same as with a local radio: WSJT-X uses `/tmp/trusdx` (or COM8, or `127.0.0.1:4542`) and the
 virtual audio device. If the connection drops, the driver reconnects by itself.
 
+**Wi-Fi quality matters.** The radio's audio flows constantly, so a link that drops packets stalls it for a second
+or more. Check from the Pi with `ping -c 300 -i 0.2 LAPTOP-ADDRESS`: under 2% loss is fine; 10–15% (seen on one Windows
+PC) causes "not responding" warnings and gaps in your transmit audio. Fix it with the laptop's Wi-Fi power saving off
+(Windows: Device Manager → Wi-Fi adapter → Power Management and Advanced), 5 GHz, or Ethernet. As a stopgap,
+`--net-buffer 600` covers longer stalls (at 0.6 s extra transmit delay).
+
 **Delay:** the network adds about 10 ms on a home network (more on busy Wi-Fi). The driver queues 200 ms of transmit
 audio ahead (`--net-buffer`), so Wi-Fi hiccups don't leave gaps in your signal. FT8 decodes signals that are off by up
 to about ±2 s, so this doesn't matter.
