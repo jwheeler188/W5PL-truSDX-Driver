@@ -1,6 +1,6 @@
 # Changes
 
-## Next (unreleased)
+## beta 2026-11-10 (network radio, streaming reset, TX gain)
 
 | # | Change |
 |---|---|

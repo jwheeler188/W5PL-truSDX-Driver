@@ -50,7 +50,7 @@ import sys
 from sys import platform
 
 DRIVER_NAME = "W5PL Driver for DL2MAN (tr)uSDX"   # based on trusdx-audio by SQ3SWF / PE1NNZ
-DRIVER_VERSION = "beta-2026-11-08-3 (clean TX audio: even pacing, 10473 S/s with 2 stop bits)"
+DRIVER_VERSION = "beta-2026-11-10 (network radio, streaming reset after TX, --tx-gain)"
 audio_tx_rate_trusdx = 4800
 audio_tx_rate = 10473  # fix: was 11520 (100% of the 115200 baud link: trx misses bytes -> rough audio, stuck/crashed TX).
 # The trx plays each TX byte the moment it arrives (DL2MAN: "11520 Hz, or lower if samples are sent continuously at
