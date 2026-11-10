@@ -39,7 +39,11 @@ by SQ3SWF and PE1NNZ.
 - **Streaming reset:** 14 of 14 transmissions with `--reset-after-tx` reset cleanly, receive audio and decoding resumed.
 - **TX gain** (TX Drive 7): gain 1.5 = +1.5 dB median at 38 PSK Reporter receivers; gain 2 clipped and was 2 dB worse.
 
-The Windows installers in this release are newly built and have not been tested on the air yet. Reports welcome.
+- **Windows ARM64 installer** (Windows 11 in Parallels on an Apple Silicon Mac, network radio, `--cat-tcp 4542`):
+  64 FT8 transmissions, all keyed and un-keyed cleanly. Once the VM's transmit audio stalled mid-transmission and the
+  bridge un-keyed the radio by itself; the driver also reconnected by itself once. Both recovered without help.
+
+The Windows x64 installer has not been tested on the air yet. Reports welcome.
 
 ## Downloads
 
