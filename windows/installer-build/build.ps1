@@ -83,7 +83,7 @@ Set-Location -LiteralPath $WORK
 
 # 5. Build the driver executable (x64; runs natively on Intel/AMD and emulated on Windows ARM)
 Step "Building W5PL truSDX Driver.exe with Nuitka (first run downloads a C compiler - this can take several minutes)"
-& $PY -m nuitka --standalone --assume-yes-for-downloads "W5PL truSDX Driver.py"
+& $PY -m nuitka --standalone --assume-yes-for-downloads --include-module=serial.urlhandler.protocol_socket "W5PL truSDX Driver.py"
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path "W5PL truSDX Driver.dist\W5PL truSDX Driver.exe")) { Fail "Nuitka build failed (see messages above)." }
 
 # 6. Build the installers

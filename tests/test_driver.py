@@ -186,6 +186,15 @@ class EncodeTx(unittest.TestCase):
             self.m.build_parser().parse_args(["--tx-gain", "0"])
 
 
+class NetworkUrl(unittest.TestCase):
+    def test_socket_handler_imported_by_the_driver(self):
+        """Compiled builds only contain modules the driver imports; pyserial loads socket:// by name at run time."""
+        src = open(DRIVER).read()
+        self.assertIn("\nimport serial.urlhandler.protocol_socket", src)
+        load_driver()
+        self.assertIn("serial.urlhandler.protocol_socket", sys.modules)
+
+
 class UnkeyTiming(unittest.TestCase):
     def test_usb_unkey_sequence(self):
         """Measured sequence for 2.00x over USB: audio, 200 ms quiet, ;RX;, 100 ms, ;UA2;"""

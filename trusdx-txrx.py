@@ -39,6 +39,10 @@
 import pyaudio
 import serial
 import serial.tools.list_ports
+# fix: pyserial loads its socket:// handler by name at run time, so the compiled Windows driver (Nuitka) left it out:
+# --serial-url failed with "protocol 'socket' not known" (Windows ARM64 installer, 2026-11-10). Import it here so every
+# build includes it.
+import serial.urlhandler.protocol_socket  # noqa: F401
 import threading
 import time
 import socket

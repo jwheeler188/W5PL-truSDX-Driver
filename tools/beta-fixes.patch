@@ -1,5 +1,5 @@
 --- tools/trusdx-txrx.original.py	2026-11-07 10:52:33
-+++ trusdx-txrx.py	2026-11-09 22:52:07
++++ trusdx-txrx.py	2026-11-09 23:04:00
 @@ -1,5 +1,7 @@
  #!/usr/bin/env python3
  # de SQ3SWF, PE1NNZ 2023
@@ -8,8 +8,14 @@
  
  # Linux:
  # sudo apt install portaudio19-dev
-@@ -39,18 +41,53 @@
+@@ -37,20 +39,59 @@
+ import pyaudio
+ import serial
  import serial.tools.list_ports
++# fix: pyserial loads its socket:// handler by name at run time, so the compiled Windows driver (Nuitka) left it out:
++# --serial-url failed with "protocol 'socket' not known" (Windows ARM64 installer, 2026-11-10). Import it here so every
++# build includes it.
++import serial.urlhandler.protocol_socket  # noqa: F401
  import threading
  import time
 +import socket
@@ -63,7 +69,7 @@
  
  def log(msg):
      if config['verbose']: print(f"{datetime.datetime.utcnow()} {msg}")
-@@ -62,7 +99,9 @@
+@@ -62,7 +103,9 @@
          print(pyaudio.PyAudio().get_host_api_info_by_index(i))
          
  def find_audio_device(name, occurance = 0):
@@ -74,7 +80,7 @@
      result = [i for i in range(pyaudio.PyAudio().get_device_count()) if name in (pyaudio.PyAudio().get_device_info_by_index(i)['name']) ]
      return result[occurance] if len(result) else -1 # return n-th matching device to name, -1 for no match
  
-@@ -71,13 +110,32 @@
+@@ -71,13 +114,32 @@
          print(port)
  
  def find_serial_device(name, occurance = 0):
@@ -109,7 +115,7 @@
          #if not status[0]: pastream.write(d)  #  in CAT streaming mode: directly fwd to audio
          if d[-1] == ord(';'):
              status[1] = False           # go to CAT cmd mode when data ends with ';'
-@@ -86,19 +144,45 @@
+@@ -86,19 +148,45 @@
          if d.startswith(b'US'):
              #log("***US mode")
              status[1] = True            # go to CAT stream mode when data starts with US
@@ -159,7 +165,7 @@
              if False and status[0]:  # WORKAROUND: special case for TX; this is a workaround to handle CAT responses properly during TX
                  if(ser.in_waiting < 1): time.sleep(0.001)
                  else:
-@@ -109,10 +193,20 @@
+@@ -109,10 +197,20 @@
                      handle_rx_audio(ser, cat, pastream, d)
              # below implements: d = ser.read_until(b';', 32)  #read until CAT end or enough in buf but only up to 32 bytes to keep response
              #elif(ser.in_waiting < config['tx_block_size']): time.sleep(0.001)   #normal case for RX
@@ -182,7 +188,7 @@
                  x = d.split(b';', maxsplit=1)
                  cat_delim = (len(x) == 2)
                  bbuf = x[1] if cat_delim else b''
-@@ -123,24 +217,43 @@
+@@ -123,24 +221,43 @@
                  handle_rx_audio(ser, cat, pastream, d)
      except Exception as e:
          log(e)
@@ -235,7 +241,7 @@
  
  def tx_cat_delay(ser):
      #ser.reset_output_buffer() # because trusdx TX buffers can be full, empty host buffers (but reset_output_buffer does not seem to work)
-@@ -149,35 +262,145 @@
+@@ -149,35 +266,145 @@
      #time.sleep(0.0005 + 32/audio_tx_rate_trusdx) # and wait until trusdx buffers are read
      time.sleep(0.010) # and wait a bit before interrupting TX stream for a CAT cmd
  
@@ -407,7 +413,7 @@
  def handle_cat(pastream, ser, cat):
      if(cat.inWaiting()):
          if not status[3]:
-@@ -185,55 +408,245 @@
+@@ -185,55 +412,245 @@
              log("CAT interface active")
          d = cat.read_until(b";")
          if True and d.startswith(b'ID'):   # this is a workaround for unrealistic fast RTT expectations in hamlib for sequence RX;ID;
@@ -681,7 +687,7 @@
              c1 = fd1.read(1)
              fd2.write(c1)
              #print(f'{datetime.datetime.utcnow()} {threading.current_thread().ident} > ', c1)
-@@ -244,6 +657,11 @@
+@@ -244,6 +661,11 @@
  
  # https://stackoverflow.com/questions/7088672/pyaudio-working-but-spits-out-error-messages-each-time
  def run():
@@ -693,7 +699,7 @@
      try:
          status[0] = False
          status[1] = False
-@@ -274,6 +692,13 @@
+@@ -274,6 +696,13 @@
          if config['direct']:
             virtual_audio_dev_out = "" # default audio device
             virtual_audio_dev_in  = "" # default audio device
@@ -707,7 +713,7 @@
  
          if config['verbose']:
              show_audio_devices()
-@@ -282,7 +707,8 @@
+@@ -282,7 +711,8 @@
              print("Serial device = ", find_serial_device(trusdx_serial_dev) )
              print("Serial loopback = ", find_serial_device(loopback_serial_dev) )
          
@@ -717,7 +723,7 @@
              if find_serial_device(loopback_serial_dev):
                  print(f"Conflict on COM port {loopback_serial_dev}: Go to Device Manager, select CH340 device and change in advanced settings COM port other than 8 or 9.")
                  time.sleep(1)
-@@ -290,41 +716,77 @@
+@@ -290,41 +720,77 @@
                  print(f"Conflict on COM port {cat_serial_dev}: Go to Device Manager, select CH340 device and change in advanced settings COM port other than 8 or 9.")
                  time.sleep(1)
  
@@ -816,7 +822,7 @@
              raise
              
          #ser.dtr = True
-@@ -333,9 +795,10 @@
+@@ -333,9 +799,10 @@
          ser.write(b";MD2;UA2;" if not config['unmute'] else b";MD2;UA1;") # enable audio streaming, mute trusdx
          #status[1] = True
  
@@ -830,7 +836,7 @@
  
          print(f"(tr)uSDX driver OK! Available devices = [{virtual_audio_dev_in}, {virtual_audio_dev_out}, {cat_serial_dev}]" )
          #ts = time.time()
-@@ -349,47 +812,96 @@
+@@ -349,47 +816,96 @@
      except KeyboardInterrupt:
          print("Stopping")
          status[2] = False
