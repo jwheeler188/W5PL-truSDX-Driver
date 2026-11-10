@@ -282,6 +282,14 @@ the power when TX Drive is below 8: a lower slider means less RF. FT8 sends one 
 doesn't distort it as long as the audio stays below full scale; near the top of the slider (just below the maximum) is
 right. For voice-like modes with a changing envelope, use a lower setting.
 
+> **The Pwr slider is uneven, and that's normal** (thanks G4BWQ, issue 2). The slider works in dB: from 0 dB at the top
+> to about −45 dB at the bottom, and −20 dB is already only 1/10 of the full audio level. The audio to the radio is
+> 8-bit, so at −30 dB only about 4 of its 128 steps are used. The result: almost no power over most of the slider, then
+> a jump to full power near the top, and overdrive past that. **Leave the slider near the top and set the power with TX
+> Drive.** For FT8 you can also use TX Drive 8: the radio then sends full power at any audio level, and the slider no
+> longer matters. Start the driver with `-v` to see each transmission's level (`TX audio peak 95% of full scale, 0 …
+> clipped`): aim just under 100% with no clipping (section 10, `--tx-gain`).
+
 ### Auto Seq: answering callers
 With **Auto Seq** ticked, the drop-down below it decides what happens when someone answers your CQ: **CQ: None** never
 answers callers by itself (you double-click), **CQ: First** answers the first caller, **CQ: Max Dist** the farthest.
