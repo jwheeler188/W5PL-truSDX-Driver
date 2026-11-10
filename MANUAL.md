@@ -390,6 +390,8 @@ run the `.exe` from a command prompt).
 | `--rts-low` | Hold **RTS low** (and DTR high) on the radio's USB port, as DL2MAN's CAT spec describes. Default: both lines high, which has always worked. Tested 2026-11-08: no difference in operation. |
 | `--serial-url URL` | Use a radio plugged into another computer that runs the network bridge, for example `socket://pi-ticulum.local:4532` (section 11.1). Stop bits and RTS are then set on the bridge. |
 | `--net-buffer MS` | With `--serial-url`: transmit audio queued ahead, so network delays never leave a gap (default **200** ms; it delays your transmit audio by the same amount). |
+| `--tx-gain X` | Scale the transmit audio before it goes to the radio (default **1**; `2` = +6 dB). Only helps when the app's audio arrives too quiet and TX Drive is below 8; louder audio clips at full scale and distorts. With `-v`, the driver logs each transmission's level, e.g. `TX audio peak 95% of full scale, 0 of 144001 samples clipped`: raise the gain only until the peak is just under 100%. Tested 2026-11-10 (TX Drive 7, WSJT-X peak 63%): gain 1.5 gave a 95% peak and +1.5 dB median on 38 PSK Reporter receivers; gain 2 clipped 38% of samples and was 2 dB *worse*. For low power, check TX Drive (menu 3.3) and the app's Pwr slider first. |
+| `--reset-after-tx` | After every transmission, switch the radio's audio streaming off and on (`;UA0;`, 200 ms, `;UA2;`, 50 ms, `;RX;`). Try it if receive audio stays broken after a transmission. Without it the driver does this only when no receive audio is back 3 s after un-key. Tested 2026-11-10 on 2.00x (network radio, 40 m FT8): 14 of 14 transmissions reset cleanly, receive and decoding resumed each time. |
 | `--forward-if` | Send WSJT-X's `IF;` polls to the radio instead of answering them from its `FA;`/`MD;` replies (the default since beta 2026-11-08; section 16). |
 | `-B N`, `--block-size N` | Receive audio block size (default 512). |
 | `-T N`, `--tx-block-size N` | Serial read block size (default 48). |
@@ -494,6 +496,7 @@ not tested yet.
 | **No waterfall** but CAT works | WSJT-X Audio → Input must be CABLE Output / BlackHole 2ch / Monitor of TRUSDX. On Linux, check routing in pavucontrol. |
 | Transmit shows on the radio but **no output power** | Check the WSJT-X Pwr slider, the radio's TX Drive, and that WSJT-X Audio → Output is CABLE Input / BlackHole 2ch / TRUSDX. **macOS:** System Settings → Privacy & Security → **Microphone** must allow Terminal, or macOS gives the driver silence instead of WSJT-X's audio. |
 | Transmit audio sounds **rough, warbly or clicky** on another receiver | You're running beta 2026-11-08-2 or older, or `--stop-bits 1`. Update; this version sends the audio evenly paced. |
+| **Receive audio broken after a transmission**, until the radio is rebooted | Check VOX OFF, Semi-QSK OFF and CQ Interval 0 (section 3). Then start the driver with `--reset-after-tx`. If it still happens, report it with a `-v` log (section 13): the `RX stats` lines show whether the radio still streams. |
 | Radio **beeps or keys up by itself** a few seconds after a transmission | Its **CQ Interval** (menu 4.1) is set: the radio sends its own CW CQ message. Set it to 0. A crash can change this setting. |
 | WSJT-X doesn't answer stations that **reply to your CQ** | Set the drop-down below **Auto Seq** to **CQ: First** (section 5). |
 | Hamlib error at **Test CAT / Test PTT** on macOS/Linux | Settings → Radio → **Force Control Lines**: set DTR and RTS to blank. |
@@ -565,6 +568,9 @@ The driver is a single Python file, **`trusdx-txrx.py`**, the same on all platfo
   Nuitka, then builds `Setup_W5PL_truSDX_Driver_beta_x64.exe`. For the ARM64 installer, first put the ARM64 drivers in
   `windows\installer-build\arm64-drivers\` (see the `README.txt` there). The build runs in a local folder, so it also works
   from a Parallels/VMware shared folder.
+- **Tests:** `python3 -m unittest discover -s tests -v` runs the driver against a simulated radio (no radio, sound
+  card or virtual cable needed; only `pyserial`). They cover TX audio encoding, the un-key timing, the streaming reset,
+  band changes and polls during TX, and receive-stream parsing. GitHub runs them on every push (Actions tab).
 - **Patch for the original driver:** `tools/beta-fixes.patch` is a unified diff from the original `trusdx-txrx.py`.
 
 ---

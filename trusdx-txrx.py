@@ -78,6 +78,9 @@ after_tx = []              # frequency/mode changes received during TX, sent onc
 pause_until = [0.0]        # boot-loop breaker: no traffic to the trx until this time
 t_unkey = [0.0]   # time the last un-key sequence finished
 second_unkey_at = [0]  # when to send the 2nd RX+UA after an un-key (0 = none pending)
+reset_check_at = [0]   # when to check whether the 2nd RX+UA brought RX audio back (0 = none pending)
+reset_seq = [0, 0.0]   # streaming reset in progress: [step 1-3 (0 = none), time of the next step]
+TX_LEVEL = [0, 0, 0]   # this transmission's TX audio: [peak after --tx-gain, clipped samples, samples]
 start_ts = [time.time()]  # driver start, the watchdog waits a few seconds after startup
 RUN_GEN = [0]      # incremented on every run()/reconnect; threads from an older run exit
 tx_broken = [False]  # set when the trx answers E; during TX (left audio mode): stop sending TX audio
@@ -262,6 +265,45 @@ def tx_cat_delay(ser):
 def ua_cmd():
     return b"UA2;" if not config['unmute'] else b"UA1;"
 
+def encode_tx(samples, gain=1.0):
+    """16-bit TX audio -> the trx's unsigned 8-bit samples. --tx-gain scales it first (clipped at full scale). Byte
+    0x3B is ';', which would end the TX audio stream, so it becomes 0x3A."""
+    arr = array.array('h', samples)
+    if arr:   # -v: peak level and clipping per transmission, logged at un-key
+        pk = max(max(arr), -min(arr)) * gain
+        TX_LEVEL[0] = max(TX_LEVEL[0], pk)
+        if pk > 32767: TX_LEVEL[1] += sum(1 for x in arr if abs(x * gain) > 32767)
+        TX_LEVEL[2] += len(arr)
+    if gain != 1.0: s8 = bytearray([128 + max(-32768, min(32767, int(x * gain))) // 256 for x in arr])
+    else:           s8 = bytearray([128 + x // 256 for x in arr])
+    return s8.replace(b'\x3b', b'\x3a')
+
+def tx_level_report():
+    """'TX audio peak 71% of full scale, 0 clipped' for the last transmission (-v), then reset."""
+    peak, clipped, n = TX_LEVEL
+    TX_LEVEL[:] = [0, 0, 0]
+    if not n: return ""
+    return f"TX audio peak {min(peak, 32768) / 327.68:.0f}% of full scale{f' (before clipping {peak / 327.68:.0f}%)' if peak > 32767 else ''}, {clipped} of {n} samples clipped ({100 * clipped / n:.1f}%)"
+
+def start_stream_reset(why):
+    """Reset the trx's CAT audio streaming: ;UA0; (off), 200 ms, ;UA2; (on), 50 ms, ;RX;. Runs step by step from
+    the TX loop (step_stream_reset), so CAT replies to the app are never held up. Idea from jasiek's
+    trusdx-mac-audio-bridge, which does this after every TX: 2.00x can stay silent after TX until streaming is
+    switched off and on again (UA alone isn't always enough)."""
+    reset_seq[0] = 1; reset_seq[1] = time.time() + 0.05
+    log(f"I: streaming reset scheduled ({why})")
+
+def step_stream_reset(ser, now):
+    step = reset_seq[0]
+    if not step or now < reset_seq[1]: return
+    if status[0]: reset_seq[0] = 0; log("I: streaming reset cancelled (transmitting)"); return
+    if   step == 1: ser.write(b";UA0;");         reset_seq[0] = 2; reset_seq[1] = now + 0.2
+    elif step == 2: ser.write(b";" + ua_cmd());  reset_seq[0] = 3; reset_seq[1] = now + 0.05
+    else:           ser.write(b";RX;");          reset_seq[0] = 0
+    ser.flush()
+    unkey_ts[0] = time.time()   # filters stray ?;/UA replies and answers polls from cache while the trx settles
+    if not reset_seq[0]: log("I: streaming reset done: ;UA0; ;UA; ;RX;")
+
 def start_tx(ser, pastream, why):
     """Key the trx for CAT-streamed TX audio. Shared by CAT, RTS/DTR and VOX PTT."""
     wait = 3.0 if config['serial_url'] else 1.0      # over the network RX audio can pause for a second on Wi-Fi
@@ -289,6 +331,7 @@ def start_tx(ser, pastream, why):
     # Over the network the cushion is larger (--net-buffer, default 200 ms) so Wi-Fi delays never leave a gap.
     ser.write(bytes([0x80]) * (audio_tx_rate * tx_prefill_ms() // 1000))
     status[0] = True
+    reset_seq[0] = 0; reset_check_at[0] = second_unkey_at[0] = 0   # nothing from the last un-key may run during TX
     tx_broken[0] = False
     log(f"I: TX0; + US ({why})")
     if pastream:
@@ -318,6 +361,8 @@ def stop_tx(ser, pastream, why):
     ser.flush()
     unkey_ts[0] = t_unkey[0] = time.time()
     second_unkey_at[0] = time.time() + 1.5   # fallback only, fires if no RX audio came back
+    if was_tx and config['reset_after_tx']: start_stream_reset("--reset-after-tx")
+    if was_tx and config['verbose']: log(f"I: {tx_level_report()}")
     log(f"I: {('timing by the bridge, ' if net else '200 ms quiet, ') if was_tx else ''};RX; + ;UA; ({why})")
     if pastream:
         pastream.stop_stream()
@@ -485,8 +530,15 @@ def transmit_audio_via_serial(pastream, ser, cat, gen=None):
                     ser.write(b";" + ua_cmd())
                     ser.flush()
                     unkey_ts[0] = time.time()   # extends cache answers / stray-reply filter while it settles
+                    reset_check_at[0] = time.time() + 1.5
                     log("I: ;RX; + UA (2nd un-key sequence)")
-            if after_tx and not status[0] and rx_seen_ts[0] > t_unkey[0]:
+            if reset_check_at[0] and now >= reset_check_at[0]:
+                # new: still no RX audio after the 2nd RX + UA: switch streaming off and on (see start_stream_reset)
+                reset_check_at[0] = 0
+                if not status[0] and rx_seen_ts[0] < t_unkey[0] and not reset_seq[0]:
+                    start_stream_reset("no RX audio 3 s after un-key")
+            step_stream_reset(ser, now)
+            if after_tx and not status[0] and rx_seen_ts[0] > t_unkey[0] and not reset_seq[0]:
                 # the trx is back in RX and streaming: now apply the frequency/mode changes held during TX
                 for c in after_tx: ser.write(c)
                 ser.flush()
@@ -518,9 +570,7 @@ def transmit_audio_via_serial(pastream, ser, cat, gen=None):
                 ua_gap[0] = 1.0; trx_down_logged[0] = False; ua_tries[0] = 0; outage[0] = False
             if (status[0] or config['vox']) and pastream.get_read_available() > 0:    # in TX mode, and audio available
                 samples = pastream.read(audio_tx_rate // 50, exception_on_overflow = False)   # fix: 20 ms pieces, evenly spaced (was 512-sample bursts)
-                arr = array.array('h', samples)
-                samples8 = bytearray([128 + x//256 for x in arr])  # was //512 because with //256 there is 5dB too much signal. Win7 only support 16 bits input audio -> convert to 8 bits
-                samples8 = samples8.replace(b'\x3b', b'\x3a')      # filter ; of stream
+                samples8 = encode_tx(samples, config['tx_gain'])   # 16 -> 8 bits, --tx-gain, no ';' in the stream
                 if status[0] and not tx_broken[0]: ser.write(samples8)
                 if config['vox']: handle_vox(samples8, ser)
             else:
@@ -809,7 +859,8 @@ def main():
     while 1:
         run();
 
-if __name__ == '__main__':
+def build_parser():
+    """Command-line options (also used by tests/, which call build_parser().parse_args([]) for the defaults)."""
     parser = argparse.ArgumentParser(description=f"{DRIVER_NAME} (audio + CAT over USB, based on trusdx-audio)", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-v", "--verbose", action="store_true", default=False, help="increase verbosity")
     parser.add_argument("--vox", action="store_true", default=False, help="VOX audio-triggered PTT (Linux only)")
@@ -829,11 +880,23 @@ if __name__ == '__main__':
     parser.add_argument("--net-buffer", type=int, default=200, metavar="MS", help="with --serial-url: TX audio cushion against network delays (adds this much TX delay)")
     parser.add_argument("--forward-if", action="store_true", default=False, help="send IF; polls to the trx instead of answering them from its FA/MD replies")
     parser.add_argument("--rawlog", default=os.environ.get('TRUSDX_RAWLOG', ''), help="debug: file to record raw data from the trx")
-    args = parser.parse_args()
+    parser.add_argument("--tx-gain", type=positive_float, default=1.0, metavar="X", help="scale TX audio before it goes to the trx (2 = +6 dB; louder audio clips at full scale)")
+    parser.add_argument("--reset-after-tx", action="store_true", default=False, help="after every TX switch the trx's audio streaming off and on (;UA0; ;UA2; ;RX;); try this if RX audio stays broken after a transmission")
+    return parser
+
+def positive_float(s):
+    v = float(s)
+    if not v > 0: raise argparse.ArgumentTypeError(f"must be greater than 0, not {s}")
+    return v
+
+if __name__ == '__main__':
+    args = build_parser().parse_args()
     config = vars(args)
     audio_tx_rate = config['tx_rate']
     if config['rawlog']: RAWLOG[0] = open(config['rawlog'], 'w')
     print(f"{DRIVER_NAME} {DRIVER_VERSION} - TX audio {audio_tx_rate} S/s, {config['stop_bits']} stop bits  (based on trusdx-audio by SQ3SWF / PE1NNZ)")
+    if config['tx_gain'] != 1.0: print(f"TX gain {config['tx_gain']:g}x")
+    if config['reset_after_tx']: print("Streaming reset after every TX (--reset-after-tx)")
     if platform == "win32":
         try: __import__("ctypes").windll.kernel32.SetConsoleTitleW(f"{DRIVER_NAME} {DRIVER_VERSION}")
         except Exception: pass
